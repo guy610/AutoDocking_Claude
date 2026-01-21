@@ -80,7 +80,7 @@ Explicitly excluded. Documented to prevent scope creep.
 
 | Feature | Reason |
 |---------|--------|
-| Legal advice/opinions | Tool provides information retrieval, not legal counsel — UPL risk |
+| Legal advice/opinions | Tool provides information retrieval, not legal counsel -- UPL risk |
 | Expired patent searches | Separate IP search agent planned by user |
 | Design-around suggestions | Legally sensitive, requires attorney input |
 | Real-time monitoring alerts | v2+ feature, not core FTO workflow |
@@ -99,17 +99,17 @@ Validation cases provided by user for testing the complete workflow.
 | **Proposed active** | GHK peptide (Gly-His-Lys) |
 | **SMILES** | `NCC(=O)NC(Cc1cnc[nH]1)C(=O)NC(CCCCN)C(=O)O` |
 | **Countries** | US, EU |
-| **Expected result** | ✓ Clear — natural peptide, no active restricting patents |
+| **Expected result** | Clear -- natural peptide, no active restricting patents |
 
 ### Case 2: Palmitoyl-GHK (Expected: Clear)
 
 | Field | Value |
 |-------|-------|
-| **Problem** | Improve skin health (TWEL, flexibility) via collagen synthesis — GHK not permeable |
+| **Problem** | Improve skin health (TWEL, flexibility) via collagen synthesis -- GHK not permeable |
 | **Proposed active** | Palmitoyl-GHK (Pal-GHK / Palmitoyl Tripeptide-1) |
 | **SMILES** | `CCCCCCCCCCCCCCCC(=O)NCC(=O)NC(Cc1cnc[nH]1)C(=O)NC(CCCCN)C(=O)O` |
 | **Countries** | US, EU |
-| **Expected result** | ✓ Clear — no enforced patents on palmitoyl-modified peptides for cosmetic use |
+| **Expected result** | Clear -- no enforced patents on palmitoyl-modified peptides for cosmetic use |
 
 ### Case 3: Syn-Ake (Expected: Blocked)
 
@@ -118,7 +118,7 @@ Validation cases provided by user for testing the complete workflow.
 | **Problem** | Reduce wrinkles in skin |
 | **Proposed active** | Syn-Ake (dipeptide diaminobutyroyl benzylamide diacetate) |
 | **Countries** | US, EU |
-| **Expected result** | ✗ Blocked — patents WO2006047900 / US7964630B2 |
+| **Expected result** | Blocked -- patents WO2006047900 / US7964630B2 |
 | **Known blocking patents** | WO2006047900, US7964630B2 |
 
 ## Traceability
@@ -127,34 +127,34 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| INP-01 | TBD | Pending |
-| INP-02 | TBD | Pending |
-| INP-03 | TBD | Pending |
-| INP-04 | TBD | Pending |
-| INP-05 | TBD | Pending |
-| SRCH-01 | TBD | Pending |
-| SRCH-02 | TBD | Pending |
-| SRCH-03 | TBD | Pending |
-| SRCH-04 | TBD | Pending |
-| SRCH-05 | TBD | Pending |
-| SRCH-06 | TBD | Pending |
-| ANLS-01 | TBD | Pending |
-| ANLS-02 | TBD | Pending |
-| ANLS-03 | TBD | Pending |
-| ANLS-04 | TBD | Pending |
-| ANLS-05 | TBD | Pending |
-| ANLS-06 | TBD | Pending |
-| OUT-01 | TBD | Pending |
-| OUT-02 | TBD | Pending |
-| OUT-03 | TBD | Pending |
-| APP-01 | TBD | Pending |
-| APP-02 | TBD | Pending |
+| INP-01 | Phase 2 | Pending |
+| INP-02 | Phase 2 | Pending |
+| INP-03 | Phase 2 | Pending |
+| INP-04 | Phase 2 | Pending |
+| INP-05 | Phase 2 | Pending |
+| SRCH-01 | Phase 3 | Pending |
+| SRCH-02 | Phase 4 | Pending |
+| SRCH-03 | Phase 3 | Pending |
+| SRCH-04 | Phase 4 | Pending |
+| SRCH-05 | Phase 4 | Pending |
+| SRCH-06 | Phase 6 | Pending |
+| ANLS-01 | Phase 6 | Pending |
+| ANLS-02 | Phase 6 | Pending |
+| ANLS-03 | Phase 5 | Pending |
+| ANLS-04 | Phase 5 | Pending |
+| ANLS-05 | Phase 6 | Pending |
+| ANLS-06 | Phase 6 | Pending |
+| OUT-01 | Phase 7 | Pending |
+| OUT-02 | Phase 7 | Pending |
+| OUT-03 | Phase 7 | Pending |
+| APP-01 | Phase 8 | Pending |
+| APP-02 | Phase 1 | Complete |
 
 **Coverage:**
 - v1 requirements: 22 total
-- Mapped to phases: 0
-- Unmapped: 22 ⚠️
+- Mapped to phases: 22
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-01-20*
-*Last updated: 2026-01-20 after initial definition*
+*Last updated: 2026-01-21 after roadmap creation*

@@ -31,9 +31,9 @@ This roadmap delivers a desktop FTO search agent for cosmetic chemists in 8 phas
 **Plans:** 3 plans
 
 Plans:
-- [ ] 01-01-PLAN.md -- Project scaffold and worker infrastructure
-- [ ] 01-02-PLAN.md -- Progress widgets and main window integration
-- [ ] 01-03-PLAN.md -- Unit tests and human verification
+- [x] 01-01-PLAN.md -- Project scaffold and worker infrastructure
+- [x] 01-02-PLAN.md -- Progress widgets and main window integration
+- [x] 01-03-PLAN.md -- Unit tests and human verification
 
 ---
 
@@ -191,7 +191,7 @@ Plans:
 
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
-| 1 | Foundation and Async Infrastructure | APP-02 | Planned |
+| 1 | Foundation and Async Infrastructure | APP-02 | Complete |
 | 2 | Input Collection UI | INP-01, INP-02, INP-03, INP-04, INP-05 | Pending |
 | 3 | USPTO Patent Search | SRCH-01, SRCH-03 | Pending |
 | 4 | EPO Patent Search and Filtering | SRCH-02, SRCH-04, SRCH-05 | Pending |
@@ -235,4 +235,4 @@ All phases are sequential. Each depends on the prior phase completing.
 
 ---
 *Roadmap created: 2026-01-21*
-*Phase 1 planned: 2026-01-21*
+*Phase 1 complete: 2026-01-21*
