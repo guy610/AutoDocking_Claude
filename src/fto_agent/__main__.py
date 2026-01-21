@@ -3,7 +3,7 @@
 import sys
 
 from fto_agent.app import create_app
-from PySide6.QtWidgets import QMainWindow
+from fto_agent.main_window import MainWindow
 
 
 def main():
@@ -11,9 +11,7 @@ def main():
     app = create_app()
 
     # Create and show main window
-    window = QMainWindow()
-    window.setWindowTitle("FTO Search Agent")
-    window.setMinimumSize(800, 600)
+    window = MainWindow()
     window.show()
 
     sys.exit(app.exec())
