@@ -9,14 +9,14 @@
 ## Current Position
 
 **Phase:** 3 of 8 (USPTO Patent Search)
-**Plan:** 1 of 3 in phase (03-01 complete)
+**Plan:** 2 of 3 in phase (03-02 complete)
 **Status:** In progress
 
 ```
-[##########--------------------------------------------------------------] 30%
+[############------------------------------------------------------------] 35%
 ```
 
-**Next Action:** Continue Phase 3 - Create USPTO search worker (03-02)
+**Next Action:** Continue Phase 3 - MainWindow integration (03-03)
 
 ---
 
@@ -24,7 +24,7 @@
 
 | Metric | Value |
 |--------|-------|
-| Plans completed | 6 |
+| Plans completed | 7 |
 | Plans failed | 0 |
 | Success rate | 100% |
 | Total phases | 8 |
@@ -56,6 +56,9 @@
 | httpx over requests | Better async support, type hints, modern API | 03-01 |
 | Pydantic for API validation | Automatic validation, clear errors, handles optional fields | 03-01 |
 | Simple keyword extraction | KeyBERT/YAKE add heavy dependencies; simple approach sufficient for v1 | 03-01 |
+| 4-step progress reporting | Granular feedback for keyword extraction, query building, search, completion | 03-02 |
+| Empty response on cancel | Consistent return type, UI can handle gracefully | 03-02 |
+| Abstract tooltip truncation | 300 char limit prevents tooltip overflow while showing context | 03-02 |
 
 ### Technical Todos
 
@@ -71,7 +74,8 @@
 - [x] Add httpx and pydantic dependencies
 - [x] Create USPTOClient for PatentsView API
 - [x] Create keyword extractor for search terms
-- [ ] Create USPTO search worker
+- [x] Create USPTO search worker
+- [x] Create ResultsPanel widget
 - [ ] Integrate USPTO search with MainWindow
 - [ ] Set up Python 3.12 virtual environment
 - [ ] Install ReportLab, XlsxWriter
@@ -103,12 +107,20 @@ None currently.
 - build_keyword_query for query construction
 - extract_keywords and extract_search_terms utilities
 
+**Plan 03-02: USPTO Search Worker and Results Panel (COMPLETE)**
+- perform_uspto_search function with 4-step progress
+- create_uspto_search_worker factory for InputPanel data
+- ResultsPanel widget with patentSelected signal
+- Color-coded status feedback (green/blue/red)
+
 **Key artifacts created:**
 - `src/fto_agent/services/__init__.py` - Services package exports
 - `src/fto_agent/services/uspto.py` - USPTO PatentsView API client
 - `src/fto_agent/services/keyword_extractor.py` - Keyword extraction utilities
+- `src/fto_agent/workers/uspto_worker.py` - USPTO search worker
+- `src/fto_agent/widgets/results_panel.py` - Results display panel
 
-**Next:** Plan 03-02 - USPTO search worker integration
+**Next:** Plan 03-03 - MainWindow integration
 
 ---
 
@@ -150,24 +162,25 @@ Phase 2 delivered the complete input collection UI for FTO queries:
 ### Last Session
 
 **Date:** 2026-01-22
-**Activity:** Execute plan 03-01 (USPTO client and keyword extractor)
-**Outcome:** Plan complete, all verifications pass, 3 commits
+**Activity:** Execute plan 03-02 (USPTO search worker and results panel)
+**Outcome:** Plan complete, all verifications pass, 2 task commits
 
 ### Handoff Notes
 
-Phase 3 Plan 1 complete. Ready for Plan 03-02 (USPTO search worker).
+Phase 3 Plan 2 complete. Ready for Plan 03-03 (MainWindow integration).
 
 Data flow established:
 - InputPanel.get_data() provides problem, solution, constraints, smiles, countries
-- extract_search_terms() converts to keyword list
-- build_keyword_query() creates PatentsView query
-- USPTOClient.search_patents() executes search
-- PatentSearchResponse provides typed results
+- create_uspto_search_worker(data) creates configured Worker
+- Worker.signals.result emits PatentSearchResponse
+- ResultsPanel.set_results(response) displays patents
+- ResultsPanel.patentSelected emits patent_id on click
 
 Next steps:
-1. Create USPTO search worker using Worker pattern
-2. Connect MainWindow submit to USPTO worker
-3. Display results in UI
+1. Connect MainWindow submit to USPTO worker
+2. Wire progress signals to ProgressManager
+3. Wire error signals to ResultsPanel.set_error
+4. Add ResultsPanel to MainWindow layout
 
 ---
 *State initialized: 2026-01-21*
