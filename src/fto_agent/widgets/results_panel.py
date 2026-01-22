@@ -2,18 +2,22 @@
 
 This module provides the ResultsPanel widget that displays patent search
 results with title, count, and abstract tooltip. It integrates with the
-PatentSearchResponse model from the USPTO service.
+PatentSearchResponse model from the USPTO service and UnifiedPatent model
+for multi-source display.
 
 Example:
     >>> from fto_agent.widgets import ResultsPanel
     >>> panel = ResultsPanel()
     >>> panel.set_results(search_response)
     >>> panel.patentSelected.connect(on_patent_clicked)
+    >>> # Or for unified multi-source results:
+    >>> panel.set_unified_results(unified_patents, total_hits=100)
 """
 
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QLabel,
     QListWidget,
@@ -23,6 +27,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from fto_agent.services.models import PatentSource, UnifiedPatent
 from fto_agent.services.uspto import PatentSearchResponse
 
 
@@ -185,3 +190,77 @@ class ResultsPanel(QWidget):
         patent_id = item.data(Qt.ItemDataRole.UserRole)
         if patent_id:
             self.patentSelected.emit(patent_id)
+
+    def set_unified_results(
+        self, patents: list[UnifiedPatent], total_hits: int | None = None
+    ) -> None:
+        """Display unified patents from multiple sources.
+
+        Updates the count label and populates the list with patent titles
+        from multiple sources (USPTO, EPO). Each patent shows a source indicator
+        prefix like [USPTO] or [EPO].
+
+        Args:
+            patents: List of UnifiedPatent objects.
+            total_hits: Total matching patents (optional, for status display).
+        """
+        # Calculate sources for count label
+        sources = set(p.source for p in patents)
+        count = len(patents)
+        hits = total_hits if total_hits is not None else count
+
+        # Update count label with source info
+        if count > 0:
+            source_str = f"from {len(sources)} source{'s' if len(sources) > 1 else ''}"
+            self._count_label.setText(f"Found {hits} patents {source_str}")
+            self._count_label.setStyleSheet("color: #2e7d32;")  # Green for results
+        else:
+            self._count_label.setText("No patents found matching your query")
+            self._count_label.setStyleSheet("color: #666;")
+
+        # Clear existing items
+        self._list_widget.clear()
+
+        # Add patent items with source indicators
+        for patent in patents:
+            source_indicator = self._format_source_indicator(patent.source)
+            item = QListWidgetItem(f"{source_indicator} {patent.title}")
+
+            # Build tooltip with id, date, abstract, and source
+            tooltip_parts = [f"Patent: {patent.id}"]
+            tooltip_parts.append(f"Source: {patent.source.value}")
+            if patent.date:
+                tooltip_parts.append(f"Date: {patent.date}")
+            if patent.abstract:
+                # Truncate abstract to 300 chars
+                abstract = patent.abstract
+                if len(abstract) > 300:
+                    abstract = abstract[:297] + "..."
+                tooltip_parts.append(f"\n{abstract}")
+
+            item.setToolTip("\n".join(tooltip_parts))
+
+            # Store patent.id for retrieval on click
+            item.setData(Qt.ItemDataRole.UserRole, patent.id)
+
+            # Color-code by source (optional: USPTO blue, EPO green)
+            if patent.source == PatentSource.USPTO:
+                item.setForeground(QColor("#1565c0"))  # Blue for USPTO
+            elif patent.source == PatentSource.EPO:
+                item.setForeground(QColor("#2e7d32"))  # Green for EPO
+
+            self._list_widget.addItem(item)
+
+        # Re-enable list
+        self._list_widget.setEnabled(True)
+
+    def _format_source_indicator(self, source: PatentSource) -> str:
+        """Format source indicator for display.
+
+        Args:
+            source: PatentSource enum value.
+
+        Returns:
+            Formatted string like "[USPTO]" or "[EPO]".
+        """
+        return f"[{source.value}]"
