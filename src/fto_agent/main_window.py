@@ -3,9 +3,13 @@
 This module provides the MainWindow class that serves as the primary user interface
 for the FTO Search Agent. It integrates the Worker pattern and ProgressManager
 for responsive background operations.
+
+Supports both USPTO (US patents) and EPO (European patents) searches based on
+selected countries. Results are displayed in a unified format.
 """
 
 import os
+from typing import Any
 
 from PySide6.QtCore import Qt, QThreadPool, Slot
 from PySide6.QtWidgets import (
@@ -17,9 +21,20 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from fto_agent.services import PatentSearchResponse, USPTOSearchError
+from fto_agent.services import (
+    EPOSearchError,
+    EPOSearchResponse,
+    PatentSearchResponse,
+    PatentSource,
+    UnifiedPatent,
+    USPTOSearchError,
+)
 from fto_agent.widgets import InputPanel, ProgressManager, ResultsPanel
-from fto_agent.workers import Worker, create_uspto_search_worker
+from fto_agent.workers import (
+    Worker,
+    create_epo_search_worker,
+    create_uspto_search_worker,
+)
 
 
 class MainWindow(QMainWindow):
@@ -46,7 +61,12 @@ class MainWindow(QMainWindow):
 
         # Thread pool for background operations
         self._thread_pool = QThreadPool()
-        self._current_worker = None
+        self._current_worker: Worker | None = None
+
+        # Multi-source search state
+        self._unified_results: list[UnifiedPatent] = []
+        self._pending_searches: list[str] = []  # Track which searches to run
+        self._search_data: dict[str, Any] = {}  # Store input data for multi-search
 
         # Set up UI components
         self._setup_central_widget()
@@ -99,25 +119,48 @@ class MainWindow(QMainWindow):
         """Start the FTO search operation.
 
         Called when the user clicks the Submit button in InputPanel.
-        Validates inputs, creates a USPTO search worker, and starts execution.
+        Validates inputs and determines which searches to run based on
+        country selection. Supports USPTO (US) and EPO (EU) searches.
         """
         # Get form data
         data = self._input_panel.get_data()
 
-        # Check if US is selected (USPTO search requires US)
-        if "US" not in data["countries"]:
-            self.statusBar().showMessage(
-                "USPTO search requires US country selection"
-            )
-            return
+        # Determine which searches to run based on countries
+        run_uspto = "US" in data["countries"]
+        run_epo = "EU" in data["countries"]
 
-        # Get API key from environment
+        # Check credentials for each search type
         api_key = os.environ.get("PATENTSVIEW_API_KEY")
-        if not api_key:
+        epo_key = os.environ.get("EPO_OPS_CONSUMER_KEY")
+        epo_secret = os.environ.get("EPO_OPS_CONSUMER_SECRET")
+
+        # Validate at least one search can run
+        if run_uspto and not api_key:
             self.statusBar().showMessage(
                 "PATENTSVIEW_API_KEY environment variable not set"
             )
             return
+        if run_epo and (not epo_key or not epo_secret):
+            self.statusBar().showMessage(
+                "EPO_OPS_CONSUMER_KEY and EPO_OPS_CONSUMER_SECRET required"
+            )
+            return
+        if not run_uspto and not run_epo:
+            self.statusBar().showMessage(
+                "Select US or EU to search patents"
+            )
+            return
+
+        # Reset multi-search state
+        self._unified_results = []
+        self._pending_searches = []
+        self._search_data = data
+
+        # Queue searches to run (sequential execution for v1)
+        if run_uspto:
+            self._pending_searches.append("USPTO")
+        if run_epo:
+            self._pending_searches.append("EPO")
 
         # Disable input panel during search
         self._input_panel.setEnabled(False)
@@ -125,14 +168,41 @@ class MainWindow(QMainWindow):
         # Set results panel to loading state
         self._results_panel.set_loading(True)
 
-        # Create worker for USPTO search
-        self._current_worker = create_uspto_search_worker(data, api_key)
+        # Start the first search
+        self._run_next_search()
 
-        # Connect signals
+    def _run_next_search(self) -> None:
+        """Run the next pending search from the queue.
+
+        Implements sequential execution of USPTO and EPO searches.
+        Called after each search completes to chain to the next.
+        """
+        if not self._pending_searches:
+            # All searches complete, display unified results
+            self._update_unified_display()
+            self._on_all_searches_finished()
+            return
+
+        search_type = self._pending_searches.pop(0)
+
+        if search_type == "USPTO":
+            api_key = os.environ.get("PATENTSVIEW_API_KEY", "")
+            self._current_worker = create_uspto_search_worker(
+                self._search_data, api_key
+            )
+            self._current_worker.signals.result.connect(self._on_uspto_search_result)
+        elif search_type == "EPO":
+            epo_key = os.environ.get("EPO_OPS_CONSUMER_KEY", "")
+            epo_secret = os.environ.get("EPO_OPS_CONSUMER_SECRET", "")
+            self._current_worker = create_epo_search_worker(
+                self._search_data, epo_key, epo_secret
+            )
+            self._current_worker.signals.result.connect(self._on_epo_search_result)
+
+        # Connect common signals
         self._current_worker.signals.progress.connect(self._on_progress)
-        self._current_worker.signals.result.connect(self._on_search_result)
         self._current_worker.signals.error.connect(self._on_search_error)
-        self._current_worker.signals.finished.connect(self._on_finished)
+        self._current_worker.signals.finished.connect(self._on_search_step_finished)
 
         # Start progress manager and worker
         self._progress_manager.start(self._current_worker)
@@ -156,18 +226,38 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(message)
 
     @Slot(object)
-    def _on_search_result(self, result: PatentSearchResponse):
+    def _on_uspto_search_result(self, result: PatentSearchResponse):
         """Handle successful completion of USPTO search.
 
+        Converts USPTO results to unified format and adds to collection.
+
         Args:
-            result: PatentSearchResponse with search results.
+            result: PatentSearchResponse with USPTO search results.
         """
-        self._results_panel.set_results(result)
-        self.statusBar().showMessage(f"Found {result.total_hits} patents")
+        for patent in result.patents:
+            self._unified_results.append(UnifiedPatent.from_uspto(patent))
+        self.statusBar().showMessage(
+            f"USPTO: Found {result.total_hits} patents"
+        )
+
+    @Slot(object)
+    def _on_epo_search_result(self, result: EPOSearchResponse):
+        """Handle successful completion of EPO search.
+
+        Converts EPO results to unified format and adds to collection.
+
+        Args:
+            result: EPOSearchResponse with EPO search results.
+        """
+        for patent in result.patents:
+            self._unified_results.append(UnifiedPatent.from_epo(patent))
+        self.statusBar().showMessage(
+            f"EPO: Found {result.total_hits} patents"
+        )
 
     @Slot(tuple)
     def _on_search_error(self, error_info: tuple):
-        """Handle error from USPTO search worker.
+        """Handle error from search worker.
 
         Args:
             error_info: Tuple of (exception_type, value, traceback_str).
@@ -175,7 +265,7 @@ class MainWindow(QMainWindow):
         exctype, value, tb = error_info
 
         # Extract error message
-        if isinstance(value, USPTOSearchError):
+        if isinstance(value, (USPTOSearchError, EPOSearchError)):
             message = value.message
         else:
             message = str(value)
@@ -183,6 +273,54 @@ class MainWindow(QMainWindow):
         # Display error in results panel and status bar
         self._results_panel.set_error(message)
         self.statusBar().showMessage(f"Search failed: {message}")
+
+        # Clear pending searches on error
+        self._pending_searches = []
+
+    @Slot()
+    def _on_search_step_finished(self):
+        """Handle completion of a single search step.
+
+        Chains to the next search if any are pending.
+        """
+        # Stop progress tracking
+        self._progress_manager.stop()
+        # Clear worker reference
+        self._current_worker = None
+        # Run next search (or finish if none pending)
+        self._run_next_search()
+
+    def _update_unified_display(self):
+        """Update results panel with all collected unified patents."""
+        self._results_panel.set_unified_results(
+            self._unified_results,
+            total_hits=len(self._unified_results)
+        )
+        self.statusBar().showMessage(
+            f"Found {len(self._unified_results)} patents"
+        )
+
+    def _on_all_searches_finished(self):
+        """Handle completion of all searches."""
+        # Stop loading state in results panel
+        self._results_panel.set_loading(False)
+        # Re-enable input panel
+        self._input_panel.setEnabled(True)
+        # Stop progress tracking and hide widgets
+        self._progress_manager.stop()
+        # Clear worker reference
+        self._current_worker = None
+
+    # Legacy handlers kept for backward compatibility
+    @Slot(object)
+    def _on_search_result(self, result: PatentSearchResponse):
+        """Handle successful completion of USPTO search (legacy).
+
+        Args:
+            result: PatentSearchResponse with search results.
+        """
+        self._results_panel.set_results(result)
+        self.statusBar().showMessage(f"Found {result.total_hits} patents")
 
     @Slot(object)
     def _on_result(self, result):
