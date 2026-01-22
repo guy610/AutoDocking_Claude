@@ -85,6 +85,13 @@ Plans:
 
 **Rationale:** USPTO PatentsView is the most accessible API (free, no registration). Starting here validates the search architecture before adding EPO complexity.
 
+**Plans:** 3 plans
+
+Plans:
+- [ ] 03-01-PLAN.md -- Services layer (USPTO client and keyword extractor)
+- [ ] 03-02-PLAN.md -- USPTO worker and results panel widget
+- [ ] 03-03-PLAN.md -- MainWindow integration and unit tests
+
 ---
 
 ## Phase 4: EPO Patent Search and Filtering
@@ -199,7 +206,7 @@ Plans:
 |-------|------|--------------|--------|
 | 1 | Foundation and Async Infrastructure | APP-02 | Complete |
 | 2 | Input Collection UI | INP-01, INP-02, INP-03, INP-04, INP-05 | Complete |
-| 3 | USPTO Patent Search | SRCH-01, SRCH-03 | Pending |
+| 3 | USPTO Patent Search | SRCH-01, SRCH-03 | Planned |
 | 4 | EPO Patent Search and Filtering | SRCH-02, SRCH-04, SRCH-05 | Pending |
 | 5 | AI Claim Extraction and Mapping | ANLS-03, ANLS-04 | Pending |
 | 6 | Risk Assessment and Semantic Search | ANLS-01, ANLS-02, ANLS-05, ANLS-06, SRCH-06 | Pending |
@@ -243,3 +250,4 @@ All phases are sequential. Each depends on the prior phase completing.
 *Roadmap created: 2026-01-21*
 *Phase 1 complete: 2026-01-21*
 *Phase 2 complete: 2026-01-22*
+*Phase 3 planned: 2026-01-22*
