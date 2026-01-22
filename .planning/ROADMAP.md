@@ -59,6 +59,12 @@ Plans:
 
 **Rationale:** All input requirements are naturally grouped as they form the complete query interface. SMILES validation uses RDKit which must be integrated early.
 
+**Plans:** 2 plans
+
+Plans:
+- [ ] 02-01-PLAN.md -- SMILES validator and InputPanel widget
+- [ ] 02-02-PLAN.md -- MainWindow integration and unit tests
+
 ---
 
 ## Phase 3: USPTO Patent Search
@@ -236,3 +242,4 @@ All phases are sequential. Each depends on the prior phase completing.
 ---
 *Roadmap created: 2026-01-21*
 *Phase 1 complete: 2026-01-21*
+*Phase 2 planned: 2026-01-22*
