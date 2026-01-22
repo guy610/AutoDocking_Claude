@@ -2,21 +2,21 @@
 
 **Core Value:** Quickly determine if a proposed cosmetic active/solution has freedom to operate in target markets
 
-**Current Focus:** Phase 2 Complete - Ready for Phase 3 (Patent Search Backend)
+**Current Focus:** Phase 3 In Progress - USPTO Patent Search Backend
 
 ---
 
 ## Current Position
 
-**Phase:** 2 of 8 (Input Collection UI) - COMPLETE
-**Plan:** 2 of 2 in phase (02-02 complete)
-**Status:** Phase 2 complete
+**Phase:** 3 of 8 (USPTO Patent Search)
+**Plan:** 1 of 3 in phase (03-01 complete)
+**Status:** In progress
 
 ```
-[########----------------------------------------------------------------] 25%
+[##########--------------------------------------------------------------] 30%
 ```
 
-**Next Action:** Begin Phase 3 (Patent Search Backend)
+**Next Action:** Continue Phase 3 - Create USPTO search worker (03-02)
 
 ---
 
@@ -24,7 +24,7 @@
 
 | Metric | Value |
 |--------|-------|
-| Plans completed | 5 |
+| Plans completed | 6 |
 | Plans failed | 0 |
 | Success rate | 100% |
 | Total phases | 8 |
@@ -53,6 +53,9 @@
 | Empty SMILES valid | SMILES field is optional; empty should not block submission | 02-01 |
 | Real-time SMILES validation | RDKit is fast; immediate feedback improves UX | 02-01 |
 | Validation stylesheet in app | Centralized styling ensures consistent validation feedback | 02-02 |
+| httpx over requests | Better async support, type hints, modern API | 03-01 |
+| Pydantic for API validation | Automatic validation, clear errors, handles optional fields | 03-01 |
+| Simple keyword extraction | KeyBERT/YAKE add heavy dependencies; simple approach sufficient for v1 | 03-01 |
 
 ### Technical Todos
 
@@ -65,11 +68,17 @@
 - [x] Create InputPanel widget with form validation
 - [x] Integrate InputPanel into MainWindow
 - [x] Create unit tests for SMILES validator and InputPanel
+- [x] Add httpx and pydantic dependencies
+- [x] Create USPTOClient for PatentsView API
+- [x] Create keyword extractor for search terms
+- [ ] Create USPTO search worker
+- [ ] Integrate USPTO search with MainWindow
 - [ ] Set up Python 3.12 virtual environment
 - [ ] Install ReportLab, XlsxWriter
 - [ ] Register for EPO OPS API access
 - [ ] Set up Anthropic API key for Claude
 - [ ] Budget for code signing certificate ($200-500/year)
+- [ ] Obtain PatentsView API key
 
 ### Blockers
 
@@ -80,6 +89,26 @@ None currently.
 - AI hallucination rates 17-58% on legal queries -- always show confidence scores and citations
 - Unsigned executables blocked by Windows SmartScreen -- code signing required for Phase 8
 - EPO OPS registration may take time -- start early in Phase 4
+- PatentsView API key required for USPTO search -- request from PatentsView support portal
+
+---
+
+## Phase 3 Progress
+
+**Plan 03-01: USPTO Client and Keyword Extractor (COMPLETE)**
+- httpx>=0.27 and pydantic>=2.0 dependencies added
+- USPTOClient class with search_patents method
+- Patent and PatentSearchResponse Pydantic models
+- USPTOSearchError for error handling
+- build_keyword_query for query construction
+- extract_keywords and extract_search_terms utilities
+
+**Key artifacts created:**
+- `src/fto_agent/services/__init__.py` - Services package exports
+- `src/fto_agent/services/uspto.py` - USPTO PatentsView API client
+- `src/fto_agent/services/keyword_extractor.py` - Keyword extraction utilities
+
+**Next:** Plan 03-02 - USPTO search worker integration
 
 ---
 
@@ -121,28 +150,24 @@ Phase 2 delivered the complete input collection UI for FTO queries:
 ### Last Session
 
 **Date:** 2026-01-22
-**Activity:** Execute plan 02-02 (MainWindow integration and unit tests)
-**Outcome:** Phase 2 complete, all 33 tests pass, human verification approved
+**Activity:** Execute plan 03-01 (USPTO client and keyword extractor)
+**Outcome:** Plan complete, all verifications pass, 3 commits
 
 ### Handoff Notes
 
-Phase 2 complete. Ready for Phase 3 (Patent Search Backend).
+Phase 3 Plan 1 complete. Ready for Plan 03-02 (USPTO search worker).
 
-Data flow for Phase 3:
-- User fills InputPanel and clicks Submit
-- MainWindow._start_fto_search() receives signal
-- InputPanel.get_data() returns dict with:
-  - problem: str
-  - solution: str
-  - constraints: str
-  - smiles: str
-  - countries: List[str]
-- Phase 3 will implement actual search using Worker pattern
+Data flow established:
+- InputPanel.get_data() provides problem, solution, constraints, smiles, countries
+- extract_search_terms() converts to keyword list
+- build_keyword_query() creates PatentsView query
+- USPTOClient.search_patents() executes search
+- PatentSearchResponse provides typed results
 
-Infrastructure ready:
-- Worker pattern for async search operations
-- ProgressManager for search progress display
-- Status bar for messages and progress
+Next steps:
+1. Create USPTO search worker using Worker pattern
+2. Connect MainWindow submit to USPTO worker
+3. Display results in UI
 
 ---
 *State initialized: 2026-01-21*
