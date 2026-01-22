@@ -2,21 +2,21 @@
 
 **Core Value:** Quickly determine if a proposed cosmetic active/solution has freedom to operate in target markets
 
-**Current Focus:** Phase 4 - EPO Patent Search and Filtering (Plan 1 of 3 complete)
+**Current Focus:** Phase 4 - EPO Patent Search and Filtering (Plan 2 of 3 complete)
 
 ---
 
 ## Current Position
 
 **Phase:** 4 of 8 (EPO Patent Search and Filtering)
-**Plan:** 1 of 3 in phase (04-01 complete)
+**Plan:** 2 of 3 in phase (04-02 complete)
 **Status:** In progress
 
 ```
-[########################------------------------------------------------] 45%
+[############################--------------------------------------------] 50%
 ```
 
-**Next Action:** Plan 04-02 - EPO Search Worker and Integration
+**Next Action:** Plan 04-03 - Unit Tests and Verification
 
 ---
 
@@ -24,7 +24,7 @@
 
 | Metric | Value |
 |--------|-------|
-| Plans completed | 9 |
+| Plans completed | 10 |
 | Plans failed | 0 |
 | Success rate | 100% |
 | Total phases | 8 |
@@ -65,6 +65,9 @@
 | python-epo-ops-client | Handles OAuth token refresh and API throttling automatically | 04-01 |
 | Conservative legal status | Include UNKNOWN as active to err on side of caution for FTO | 04-01 |
 | A61K8/A61Q CPC codes | Specific cosmetics codes, not broader A61K which includes pharma | 04-01 |
+| UnifiedPatent model | Normalizes multi-source patents for unified display in results panel | 04-02 |
+| 5-step EPO progress | Extract, query, search, filter (if active-only), complete | 04-02 |
+| Per-patent legal status | Query INPADOC per patent for accurate filtering; warn on >50 | 04-02 |
 
 ### Technical Todos
 
@@ -87,7 +90,7 @@
 - [x] Add python-epo-ops-client, lxml, defusedxml dependencies
 - [x] Create EPOClient for EPO OPS API
 - [x] Create legal status parser for INPADOC data
-- [ ] Create EPO search worker
+- [x] Create EPO search worker
 - [ ] Integrate EPO search with MainWindow
 - [ ] Create unit tests for Phase 4 services and worker
 - [ ] Register for EPO OPS API access (get consumer key/secret)
@@ -120,18 +123,21 @@ Phase 4 adds EPO OPS API support for European patent search.
 - PatentStatus enum and legal status parsing from INPADOC
 - is_patent_active helper for FTO analysis filtering
 
-**Plan 04-02: EPO Search Worker and Integration (PENDING)**
-- Create perform_epo_search function following USPTO worker pattern
-- Integrate EPO search when EU selected in countries
-- Handle parallel USPTO + EPO searches
+**Plan 04-02: EPO Search Worker and Unified Model (COMPLETE)**
+- PatentSource enum with USPTO and EPO values
+- UnifiedPatent model with from_uspto and from_epo converters
+- perform_epo_search function with 5-step progress reporting
+- Legal status filtering to active-only patents via INPADOC
+- create_epo_search_worker factory for InputPanel data
 
 **Plan 04-03: Unit Tests and Verification (PENDING)**
 - Unit tests for EPO client and worker
+- Unit tests for UnifiedPatent model
 - Integration tests for multi-source search
 
-**Key artifacts created in 04-01:**
-- `src/fto_agent/services/epo.py` - EPO OPS API client
-- `src/fto_agent/services/legal_status.py` - INPADOC legal status parser
+**Key artifacts created in 04-02:**
+- `src/fto_agent/services/models.py` - UnifiedPatent, PatentSource
+- `src/fto_agent/workers/epo_worker.py` - EPO search worker with filtering
 
 **Requirements in progress:**
 - SRCH-02: EPO OPS search for EP/WO patents
@@ -218,12 +224,12 @@ Phase 2 delivered the complete input collection UI for FTO queries:
 ### Last Session
 
 **Date:** 2026-01-22
-**Activity:** Complete plan 04-01 (EPO OPS Client and Legal Status Parser)
+**Activity:** Complete plan 04-02 (EPO Search Worker and Unified Model)
 **Outcome:** Plan complete, all verifications passed
 
 ### Handoff Notes
 
-Plan 04-01 complete. Ready for Plan 04-02 (EPO Search Worker and Integration).
+Plan 04-02 complete. Ready for Plan 04-03 (Unit Tests and Verification).
 
 Current application state:
 - User can enter FTO query in InputPanel
@@ -233,16 +239,15 @@ Current application state:
 - Status bar shows patent count or error message
 - 81 unit tests passing
 
-EPO client ready for integration:
-- EPOClient class mirrors USPTOClient pattern
-- CQL query building includes cosmetic CPC codes
-- Legal status parsing ready for active patent filtering
+New in 04-02:
+- UnifiedPatent model for multi-source display
+- EPO search worker ready for MainWindow integration
+- Legal status filtering active for EPO searches
 
-Next steps for 04-02:
-1. Create perform_epo_search function (follow USPTO worker pattern)
-2. Create create_epo_search_worker factory
-3. Integrate EPO search when EU selected
-4. Handle parallel USPTO + EPO searches
+Next steps for 04-03:
+1. Unit tests for UnifiedPatent model converters
+2. Unit tests for EPO worker with mocked client
+3. Integration tests for multi-source search scenarios
 
 **Environment variables needed for EPO testing:**
 - `EPO_OPS_CONSUMER_KEY` - From https://developers.epo.org
