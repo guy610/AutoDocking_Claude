@@ -62,8 +62,8 @@ Plans:
 **Plans:** 2 plans
 
 Plans:
-- [ ] 02-01-PLAN.md -- SMILES validator and InputPanel widget
-- [ ] 02-02-PLAN.md -- MainWindow integration and unit tests
+- [x] 02-01-PLAN.md -- SMILES validator and InputPanel widget
+- [x] 02-02-PLAN.md -- MainWindow integration and unit tests
 
 ---
 
@@ -198,7 +198,7 @@ Plans:
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
 | 1 | Foundation and Async Infrastructure | APP-02 | Complete |
-| 2 | Input Collection UI | INP-01, INP-02, INP-03, INP-04, INP-05 | Pending |
+| 2 | Input Collection UI | INP-01, INP-02, INP-03, INP-04, INP-05 | Complete |
 | 3 | USPTO Patent Search | SRCH-01, SRCH-03 | Pending |
 | 4 | EPO Patent Search and Filtering | SRCH-02, SRCH-04, SRCH-05 | Pending |
 | 5 | AI Claim Extraction and Mapping | ANLS-03, ANLS-04 | Pending |
@@ -242,4 +242,4 @@ All phases are sequential. Each depends on the prior phase completing.
 ---
 *Roadmap created: 2026-01-21*
 *Phase 1 complete: 2026-01-21*
-*Phase 2 planned: 2026-01-22*
+*Phase 2 complete: 2026-01-22*
