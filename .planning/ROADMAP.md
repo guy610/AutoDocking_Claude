@@ -113,6 +113,13 @@ Plans:
 
 **Rationale:** EPO OPS provides broader coverage (EP, WO, and national patents). CPC classification and legal status filtering require EPO's richer metadata. This phase completes the search foundation.
 
+**Plans:** 3 plans
+
+Plans:
+- [ ] 04-01-PLAN.md -- EPO client and legal status parser
+- [ ] 04-02-PLAN.md -- Unified patent model and EPO worker
+- [ ] 04-03-PLAN.md -- MainWindow integration and unit tests
+
 ---
 
 ## Phase 5: AI Claim Extraction and Mapping
@@ -207,7 +214,7 @@ Plans:
 | 1 | Foundation and Async Infrastructure | APP-02 | Complete |
 | 2 | Input Collection UI | INP-01, INP-02, INP-03, INP-04, INP-05 | Complete |
 | 3 | USPTO Patent Search | SRCH-01, SRCH-03 | Complete |
-| 4 | EPO Patent Search and Filtering | SRCH-02, SRCH-04, SRCH-05 | Pending |
+| 4 | EPO Patent Search and Filtering | SRCH-02, SRCH-04, SRCH-05 | In Progress |
 | 5 | AI Claim Extraction and Mapping | ANLS-03, ANLS-04 | Pending |
 | 6 | Risk Assessment and Semantic Search | ANLS-01, ANLS-02, ANLS-05, ANLS-06, SRCH-06 | Pending |
 | 7 | Report Generation | OUT-01, OUT-02, OUT-03 | Pending |
@@ -229,7 +236,7 @@ Phase 2 (Input UI)
 Phase 3 (USPTO Search)
     |
     v
-Phase 4 (EPO Search + Filtering)
+Phase 4 (EPO Search + Filtering) <-- CURRENT
     |
     v
 Phase 5 (Claim Analysis)
@@ -251,3 +258,4 @@ All phases are sequential. Each depends on the prior phase completing.
 *Phase 1 complete: 2026-01-21*
 *Phase 2 complete: 2026-01-22*
 *Phase 3 complete: 2026-01-22*
+*Phase 4 planned: 2026-01-22*
