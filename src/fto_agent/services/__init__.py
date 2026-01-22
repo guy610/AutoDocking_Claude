@@ -4,6 +4,10 @@ This module provides clients and utilities for interacting with
 patent databases and processing user input for search queries.
 
 Exports:
+    Unified Models:
+        PatentSource: Enum for patent source (USPTO, EPO).
+        UnifiedPatent: Unified patent model for multi-source display.
+
     USPTO:
         USPTOClient: Client for USPTO PatentsView PatentSearch API.
         Patent: Pydantic model for a single USPTO patent.
@@ -28,6 +32,10 @@ Exports:
         extract_search_terms: Extract search terms from FTO query inputs.
 """
 
+from fto_agent.services.models import (
+    PatentSource,
+    UnifiedPatent,
+)
 from fto_agent.services.uspto import (
     USPTOClient,
     Patent,
@@ -53,6 +61,9 @@ from fto_agent.services.keyword_extractor import (
 )
 
 __all__ = [
+    # Unified Models
+    "PatentSource",
+    "UnifiedPatent",
     # USPTO
     "USPTOClient",
     "Patent",
