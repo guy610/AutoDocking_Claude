@@ -2,21 +2,21 @@
 
 **Core Value:** Quickly determine if a proposed cosmetic active/solution has freedom to operate in target markets
 
-**Current Focus:** Phase 3 In Progress - USPTO Patent Search Backend
+**Current Focus:** Phase 3 Complete - Ready for Phase 4 (EPO Patent Search)
 
 ---
 
 ## Current Position
 
-**Phase:** 3 of 8 (USPTO Patent Search)
-**Plan:** 2 of 3 in phase (03-02 complete)
-**Status:** In progress
+**Phase:** 3 of 8 (USPTO Patent Search) - COMPLETE
+**Plan:** 3 of 3 in phase (03-03 complete)
+**Status:** Phase complete
 
 ```
-[############------------------------------------------------------------] 35%
+[####################----------------------------------------------------] 40%
 ```
 
-**Next Action:** Continue Phase 3 - MainWindow integration (03-03)
+**Next Action:** Begin Phase 4 - EPO Patent Search
 
 ---
 
@@ -24,11 +24,11 @@
 
 | Metric | Value |
 |--------|-------|
-| Plans completed | 7 |
+| Plans completed | 8 |
 | Plans failed | 0 |
 | Success rate | 100% |
 | Total phases | 8 |
-| Phases complete | 2 |
+| Phases complete | 3 |
 
 ---
 
@@ -59,6 +59,9 @@
 | 4-step progress reporting | Granular feedback for keyword extraction, query building, search, completion | 03-02 |
 | Empty response on cancel | Consistent return type, UI can handle gracefully | 03-02 |
 | Abstract tooltip truncation | 300 char limit prevents tooltip overflow while showing context | 03-02 |
+| QSplitter for panel layout | Allows user to resize InputPanel/ResultsPanel; 50/50 default | 03-03 |
+| Env var check before search | Fail fast with clear message rather than after worker starts | 03-03 |
+| Country validation for API | USPTO API only returns US patents; prevents confusing empty results | 03-03 |
 
 ### Technical Todos
 
@@ -76,7 +79,8 @@
 - [x] Create keyword extractor for search terms
 - [x] Create USPTO search worker
 - [x] Create ResultsPanel widget
-- [ ] Integrate USPTO search with MainWindow
+- [x] Integrate USPTO search with MainWindow
+- [x] Create unit tests for Phase 3 services and worker
 - [ ] Set up Python 3.12 virtual environment
 - [ ] Install ReportLab, XlsxWriter
 - [ ] Register for EPO OPS API access
@@ -97,30 +101,43 @@ None currently.
 
 ---
 
-## Phase 3 Progress
+## Phase 3 Summary (COMPLETE)
 
-**Plan 03-01: USPTO Client and Keyword Extractor (COMPLETE)**
+Phase 3 delivered complete USPTO patent search functionality:
+
+**Plan 03-01: USPTO Client and Keyword Extractor**
 - httpx>=0.27 and pydantic>=2.0 dependencies added
 - USPTOClient class with search_patents method
 - Patent and PatentSearchResponse Pydantic models
-- USPTOSearchError for error handling
 - build_keyword_query for query construction
 - extract_keywords and extract_search_terms utilities
 
-**Plan 03-02: USPTO Search Worker and Results Panel (COMPLETE)**
+**Plan 03-02: USPTO Search Worker and Results Panel**
 - perform_uspto_search function with 4-step progress
 - create_uspto_search_worker factory for InputPanel data
 - ResultsPanel widget with patentSelected signal
 - Color-coded status feedback (green/blue/red)
 
-**Key artifacts created:**
+**Plan 03-03: MainWindow Integration and Unit Tests**
+- QSplitter layout with InputPanel (left) and ResultsPanel (right)
+- Complete search flow wired from submit to results display
+- API key and country validation before search starts
+- 40 new unit tests (81 total in suite)
+- Human verification passed for all features
+
+**Key artifacts:**
 - `src/fto_agent/services/__init__.py` - Services package exports
 - `src/fto_agent/services/uspto.py` - USPTO PatentsView API client
 - `src/fto_agent/services/keyword_extractor.py` - Keyword extraction utilities
 - `src/fto_agent/workers/uspto_worker.py` - USPTO search worker
 - `src/fto_agent/widgets/results_panel.py` - Results display panel
+- `tests/test_keyword_extractor.py` - Keyword extractor tests
+- `tests/test_uspto_client.py` - USPTO client tests
+- `tests/test_uspto_worker.py` - USPTO worker tests
 
-**Next:** Plan 03-03 - MainWindow integration
+**Requirements satisfied:**
+- SRCH-01: Async patent search (USPTO)
+- SRCH-03: Progress bar with cancel capability
 
 ---
 
@@ -162,25 +179,26 @@ Phase 2 delivered the complete input collection UI for FTO queries:
 ### Last Session
 
 **Date:** 2026-01-22
-**Activity:** Execute plan 03-02 (USPTO search worker and results panel)
-**Outcome:** Plan complete, all verifications pass, 2 task commits
+**Activity:** Complete plan 03-03 (MainWindow integration and unit tests)
+**Outcome:** Plan complete, human verification passed, Phase 3 complete
 
 ### Handoff Notes
 
-Phase 3 Plan 2 complete. Ready for Plan 03-03 (MainWindow integration).
+Phase 3 complete. Ready for Phase 4 (EPO Patent Search).
 
-Data flow established:
-- InputPanel.get_data() provides problem, solution, constraints, smiles, countries
-- create_uspto_search_worker(data) creates configured Worker
-- Worker.signals.result emits PatentSearchResponse
-- ResultsPanel.set_results(response) displays patents
-- ResultsPanel.patentSelected emits patent_id on click
+Current application state:
+- User can enter FTO query in InputPanel
+- Click Submit triggers USPTO search (if US selected, API key set)
+- Progress bar and cancel button appear during search
+- Results display in ResultsPanel with patent titles
+- Status bar shows patent count or error message
+- 81 unit tests passing
 
-Next steps:
-1. Connect MainWindow submit to USPTO worker
-2. Wire progress signals to ProgressManager
-3. Wire error signals to ResultsPanel.set_error
-4. Add ResultsPanel to MainWindow layout
+Phase 4 will add EPO OPS API support:
+1. Create EPO OPS client (similar to USPTOClient)
+2. Create EPO search worker (similar to USPTO worker)
+3. Integrate EPO search when EU selected
+4. Handle parallel USPTO + EPO searches
 
 ---
 *State initialized: 2026-01-21*
