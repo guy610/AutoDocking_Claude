@@ -132,9 +132,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | INP-03 | Phase 2 | Complete |
 | INP-04 | Phase 2 | Complete |
 | INP-05 | Phase 2 | Complete |
-| SRCH-01 | Phase 3 | Pending |
+| SRCH-01 | Phase 3 | Complete |
 | SRCH-02 | Phase 4 | Pending |
-| SRCH-03 | Phase 3 | Pending |
+| SRCH-03 | Phase 3 | Complete |
 | SRCH-04 | Phase 4 | Pending |
 | SRCH-05 | Phase 4 | Pending |
 | SRCH-06 | Phase 6 | Pending |
