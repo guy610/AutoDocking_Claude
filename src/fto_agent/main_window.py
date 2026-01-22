@@ -5,25 +5,29 @@ for the FTO Search Agent. It integrates the Worker pattern and ProgressManager
 for responsive background operations.
 """
 
-from PySide6.QtCore import QThreadPool, Slot
+import os
+
+from PySide6.QtCore import Qt, QThreadPool, Slot
 from PySide6.QtWidgets import (
     QMainWindow,
     QProgressBar,
     QPushButton,
+    QSplitter,
     QStatusBar,
-    QVBoxLayout,
     QWidget,
 )
 
-from fto_agent.widgets import InputPanel, ProgressManager
-from fto_agent.workers import Worker
+from fto_agent.services import PatentSearchResponse, USPTOSearchError
+from fto_agent.widgets import InputPanel, ProgressManager, ResultsPanel
+from fto_agent.workers import Worker, create_uspto_search_worker
 
 
 class MainWindow(QMainWindow):
     """Main application window with async operation support.
 
     Features:
-    - Input panel for FTO query collection
+    - Input panel for FTO query collection (left side)
+    - Results panel for patent display (right side)
     - Status bar with progress indicator (hidden by default)
     - Cancel button for running operations
     - Integration with ProgressManager for 500ms delay
@@ -56,16 +60,22 @@ class MainWindow(QMainWindow):
         )
 
     def _setup_central_widget(self):
-        """Create the central widget with InputPanel."""
-        central_widget = QWidget()
-        self.setCentralWidget(central_widget)
+        """Create the central widget with InputPanel and ResultsPanel in a splitter."""
+        # Create horizontal splitter for left/right layout
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+        self.setCentralWidget(splitter)
 
-        layout = QVBoxLayout(central_widget)
-
-        # Input panel for FTO query collection
+        # Left side: Input panel for FTO query collection
         self._input_panel = InputPanel()
         self._input_panel.submitRequested.connect(self._start_fto_search)
-        layout.addWidget(self._input_panel)
+        splitter.addWidget(self._input_panel)
+
+        # Right side: Results panel for patent display
+        self._results_panel = ResultsPanel()
+        splitter.addWidget(self._results_panel)
+
+        # Set initial splitter sizes (50/50 split)
+        splitter.setSizes([400, 400])
 
     def _setup_status_bar(self):
         """Create status bar with progress indicator and cancel button."""
@@ -89,17 +99,44 @@ class MainWindow(QMainWindow):
         """Start the FTO search operation.
 
         Called when the user clicks the Submit button in InputPanel.
-        Currently shows a placeholder message; actual search will be
-        implemented in Phase 3.
+        Validates inputs, creates a USPTO search worker, and starts execution.
         """
-        # Get form data (for future use in Phase 3)
+        # Get form data
         data = self._input_panel.get_data()
 
-        # Show status message (search not yet implemented)
-        self.statusBar().showMessage(
-            f"FTO search not yet implemented. "
-            f"Query: {len(data['countries'])} countries selected."
-        )
+        # Check if US is selected (USPTO search requires US)
+        if "US" not in data["countries"]:
+            self.statusBar().showMessage(
+                "USPTO search requires US country selection"
+            )
+            return
+
+        # Get API key from environment
+        api_key = os.environ.get("PATENTSVIEW_API_KEY")
+        if not api_key:
+            self.statusBar().showMessage(
+                "PATENTSVIEW_API_KEY environment variable not set"
+            )
+            return
+
+        # Disable input panel during search
+        self._input_panel.setEnabled(False)
+
+        # Set results panel to loading state
+        self._results_panel.set_loading(True)
+
+        # Create worker for USPTO search
+        self._current_worker = create_uspto_search_worker(data, api_key)
+
+        # Connect signals
+        self._current_worker.signals.progress.connect(self._on_progress)
+        self._current_worker.signals.result.connect(self._on_search_result)
+        self._current_worker.signals.error.connect(self._on_search_error)
+        self._current_worker.signals.finished.connect(self._on_finished)
+
+        # Start progress manager and worker
+        self._progress_manager.start(self._current_worker)
+        self._thread_pool.start(self._current_worker)
 
     def _cancel_operation(self):
         """Request cancellation of the current operation."""
@@ -117,6 +154,35 @@ class MainWindow(QMainWindow):
             message: Status message.
         """
         self.statusBar().showMessage(message)
+
+    @Slot(object)
+    def _on_search_result(self, result: PatentSearchResponse):
+        """Handle successful completion of USPTO search.
+
+        Args:
+            result: PatentSearchResponse with search results.
+        """
+        self._results_panel.set_results(result)
+        self.statusBar().showMessage(f"Found {result.total_hits} patents")
+
+    @Slot(tuple)
+    def _on_search_error(self, error_info: tuple):
+        """Handle error from USPTO search worker.
+
+        Args:
+            error_info: Tuple of (exception_type, value, traceback_str).
+        """
+        exctype, value, tb = error_info
+
+        # Extract error message
+        if isinstance(value, USPTOSearchError):
+            message = value.message
+        else:
+            message = str(value)
+
+        # Display error in results panel and status bar
+        self._results_panel.set_error(message)
+        self.statusBar().showMessage(f"Search failed: {message}")
 
     @Slot(object)
     def _on_result(self, result):
@@ -140,6 +206,8 @@ class MainWindow(QMainWindow):
     @Slot()
     def _on_finished(self):
         """Handle worker completion (success, error, or cancelled)."""
+        # Stop loading state in results panel
+        self._results_panel.set_loading(False)
         # Re-enable input panel
         self._input_panel.setEnabled(True)
         # Stop progress tracking and hide widgets
