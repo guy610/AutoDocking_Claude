@@ -2,21 +2,21 @@
 
 **Core Value:** Quickly determine if a proposed cosmetic active/solution has freedom to operate in target markets
 
-**Current Focus:** Phase 1 - Foundation and Async Infrastructure COMPLETE
+**Current Focus:** Phase 2 - Input Collection UI (In Progress)
 
 ---
 
 ## Current Position
 
-**Phase:** 1 of 8 (Foundation and Async Infrastructure)
-**Plan:** 3 of 3 in phase (PHASE COMPLETE)
-**Status:** Phase 1 complete
+**Phase:** 2 of 8 (Input Collection UI)
+**Plan:** 1 of 2 in phase (02-01 complete)
+**Status:** In progress
 
 ```
-[###---------------------------------------------------------------------] 15%
+[####--------------------------------------------------------------------] 20%
 ```
 
-**Next Action:** Run `/gsd:plan-phase 2` to begin Phase 2 (Patent Search)
+**Next Action:** Execute plan 02-02 (MainWindow integration with InputPanel)
 
 ---
 
@@ -24,7 +24,7 @@
 
 | Metric | Value |
 |--------|-------|
-| Plans completed | 3 |
+| Plans completed | 4 |
 | Plans failed | 0 |
 | Success rate | 100% |
 | Total phases | 8 |
@@ -49,6 +49,9 @@
 | Status bar permanent widgets | Progress bar and cancel button in status bar right side | 01-02 |
 | pytest with pytest-qt | Standard Python testing with Qt-specific fixtures | 01-03 |
 | Synchronous worker testing | Call worker.run() directly for deterministic unit tests | 01-03 |
+| RDKit for SMILES validation | Industry standard cheminformatics library | 02-01 |
+| Empty SMILES valid | SMILES field is optional; empty should not block submission | 02-01 |
+| Real-time SMILES validation | RDKit is fast; immediate feedback improves UX | 02-01 |
 
 ### Technical Todos
 
@@ -57,8 +60,9 @@
 - [x] Implement ProgressManager with 500ms delayed display
 - [x] Create MainWindow with async operation support
 - [x] Create unit tests for Worker pattern
+- [x] Install RDKit for SMILES validation
 - [ ] Set up Python 3.12 virtual environment
-- [ ] Install RDKit, ReportLab, XlsxWriter
+- [ ] Install ReportLab, XlsxWriter
 - [ ] Register for EPO OPS API access
 - [ ] Set up Anthropic API key for Claude
 - [ ] Budget for code signing certificate ($200-500/year)
@@ -75,21 +79,17 @@ None currently.
 
 ---
 
-## Phase 1 Deliverables
+## Phase 2 Progress
 
-Phase 1 completed with all success criteria met:
-
-1. **User can launch the application and see a responsive main window** - VERIFIED
-2. **User sees progress indicators when any operation exceeds 500ms** - VERIFIED
-3. **User can cancel long-running operations via a cancel button** - VERIFIED
-4. **Application remains responsive (no freezes) during background operations** - VERIFIED
+Plan 02-01 completed:
+- SMILES validator with RDKit integration
+- InputPanel widget with 5 input sections
+- Form validation for problem, solution, countries required
+- Real-time SMILES validation feedback
 
 Key artifacts:
-- `src/fto_agent/` - Package structure with PySide6
-- `src/fto_agent/workers/base.py` - Worker and WorkerSignals
-- `src/fto_agent/widgets/progress.py` - ProgressManager with 500ms delay
-- `src/fto_agent/main_window.py` - MainWindow with async support
-- `tests/test_workers.py` - Unit tests for worker pattern
+- `src/fto_agent/validators/smiles.py` - SMILES validation
+- `src/fto_agent/widgets/input_panel.py` - InputPanel widget
 
 ---
 
@@ -97,28 +97,23 @@ Key artifacts:
 
 ### Last Session
 
-**Date:** 2026-01-21
-**Activity:** Execute plan 01-03 (Unit tests and Phase 1 verification)
-**Outcome:** Unit tests created, human verified all Phase 1 criteria, phase complete
+**Date:** 2026-01-22
+**Activity:** Execute plan 02-01 (SMILES validator and InputPanel widget)
+**Outcome:** Both tasks completed, SMILES validation working, InputPanel ready for MainWindow integration
 
 ### Handoff Notes
 
-Phase 1 complete. Foundation established:
-- PySide6 application shell with main window
-- Worker/WorkerSignals pattern for async operations
-- ProgressManager with 500ms delayed display (APP-02)
-- Cancel button for operation cancellation
-- Unit tests for worker pattern (pytest + pytest-qt)
+Phase 2 plan 01 complete. New widgets:
+- `validate_smiles()` returns SmilesValidationResult with is_valid, message, atom_count
+- `is_rdkit_available()` checks for RDKit presence
+- `InputPanel` widget with validityChanged/submitRequested signals
+- `COUNTRIES` constant: [("US", "United States"), ("EU", "European Union"), ("CN", "China"), ("JP", "Japan")]
 
-Ready for Phase 2 (Patent Search):
-- Will build USPTO API client using Worker pattern
-- Search results will need new UI components
-- Progress manager ready for search operations
-
-Research flags:
-- Phase 2 (Patent Search) may need deeper research during planning -- API rate limits need validation
-- Phase 3 (AI Analysis) needs iterative prompt engineering
+Ready for 02-02 (MainWindow integration):
+- InputPanel exports from widgets package
+- Signals ready for MainWindow to connect
+- get_data() returns dict for search initiation
 
 ---
 *State initialized: 2026-01-21*
-*Last updated: 2026-01-21*
+*Last updated: 2026-01-22*
