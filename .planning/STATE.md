@@ -2,21 +2,21 @@
 
 **Core Value:** Quickly determine if a proposed cosmetic active/solution has freedom to operate in target markets
 
-**Current Focus:** Phase 3 Complete - Ready for Phase 4 (EPO Patent Search)
+**Current Focus:** Phase 4 - EPO Patent Search and Filtering (Plan 1 of 3 complete)
 
 ---
 
 ## Current Position
 
-**Phase:** 3 of 8 (USPTO Patent Search) - COMPLETE
-**Plan:** 3 of 3 in phase (03-03 complete)
-**Status:** Phase complete
+**Phase:** 4 of 8 (EPO Patent Search and Filtering)
+**Plan:** 1 of 3 in phase (04-01 complete)
+**Status:** In progress
 
 ```
-[####################----------------------------------------------------] 40%
+[########################------------------------------------------------] 45%
 ```
 
-**Next Action:** Begin Phase 4 - EPO Patent Search
+**Next Action:** Plan 04-02 - EPO Search Worker and Integration
 
 ---
 
@@ -24,7 +24,7 @@
 
 | Metric | Value |
 |--------|-------|
-| Plans completed | 8 |
+| Plans completed | 9 |
 | Plans failed | 0 |
 | Success rate | 100% |
 | Total phases | 8 |
@@ -62,6 +62,9 @@
 | QSplitter for panel layout | Allows user to resize InputPanel/ResultsPanel; 50/50 default | 03-03 |
 | Env var check before search | Fail fast with clear message rather than after worker starts | 03-03 |
 | Country validation for API | USPTO API only returns US patents; prevents confusing empty results | 03-03 |
+| python-epo-ops-client | Handles OAuth token refresh and API throttling automatically | 04-01 |
+| Conservative legal status | Include UNKNOWN as active to err on side of caution for FTO | 04-01 |
+| A61K8/A61Q CPC codes | Specific cosmetics codes, not broader A61K which includes pharma | 04-01 |
 
 ### Technical Todos
 
@@ -81,9 +84,13 @@
 - [x] Create ResultsPanel widget
 - [x] Integrate USPTO search with MainWindow
 - [x] Create unit tests for Phase 3 services and worker
-- [ ] Set up Python 3.12 virtual environment
-- [ ] Install ReportLab, XlsxWriter
-- [ ] Register for EPO OPS API access
+- [x] Add python-epo-ops-client, lxml, defusedxml dependencies
+- [x] Create EPOClient for EPO OPS API
+- [x] Create legal status parser for INPADOC data
+- [ ] Create EPO search worker
+- [ ] Integrate EPO search with MainWindow
+- [ ] Create unit tests for Phase 4 services and worker
+- [ ] Register for EPO OPS API access (get consumer key/secret)
 - [ ] Set up Anthropic API key for Claude
 - [ ] Budget for code signing certificate ($200-500/year)
 - [ ] Obtain PatentsView API key
@@ -98,6 +105,38 @@ None currently.
 - Unsigned executables blocked by Windows SmartScreen -- code signing required for Phase 8
 - EPO OPS registration may take time -- start early in Phase 4
 - PatentsView API key required for USPTO search -- request from PatentsView support portal
+
+---
+
+## Phase 4 Summary (IN PROGRESS)
+
+Phase 4 adds EPO OPS API support for European patent search.
+
+**Plan 04-01: EPO OPS Client and Legal Status Parser (COMPLETE)**
+- python-epo-ops-client, lxml, defusedxml dependencies added
+- EPOClient class with OAuth authentication
+- CQL query building with cosmetic CPC codes (A61K8, A61Q)
+- EPOPatent and EPOSearchResponse Pydantic models
+- PatentStatus enum and legal status parsing from INPADOC
+- is_patent_active helper for FTO analysis filtering
+
+**Plan 04-02: EPO Search Worker and Integration (PENDING)**
+- Create perform_epo_search function following USPTO worker pattern
+- Integrate EPO search when EU selected in countries
+- Handle parallel USPTO + EPO searches
+
+**Plan 04-03: Unit Tests and Verification (PENDING)**
+- Unit tests for EPO client and worker
+- Integration tests for multi-source search
+
+**Key artifacts created in 04-01:**
+- `src/fto_agent/services/epo.py` - EPO OPS API client
+- `src/fto_agent/services/legal_status.py` - INPADOC legal status parser
+
+**Requirements in progress:**
+- SRCH-02: EPO OPS search for EP/WO patents
+- SRCH-04: CPC classification filtering (A61K8, A61Q for cosmetics)
+- SRCH-05: Legal status filtering (active patents only)
 
 ---
 
@@ -179,12 +218,12 @@ Phase 2 delivered the complete input collection UI for FTO queries:
 ### Last Session
 
 **Date:** 2026-01-22
-**Activity:** Complete plan 03-03 (MainWindow integration and unit tests)
-**Outcome:** Plan complete, human verification passed, Phase 3 complete
+**Activity:** Complete plan 04-01 (EPO OPS Client and Legal Status Parser)
+**Outcome:** Plan complete, all verifications passed
 
 ### Handoff Notes
 
-Phase 3 complete. Ready for Phase 4 (EPO Patent Search).
+Plan 04-01 complete. Ready for Plan 04-02 (EPO Search Worker and Integration).
 
 Current application state:
 - User can enter FTO query in InputPanel
@@ -194,11 +233,20 @@ Current application state:
 - Status bar shows patent count or error message
 - 81 unit tests passing
 
-Phase 4 will add EPO OPS API support:
-1. Create EPO OPS client (similar to USPTOClient)
-2. Create EPO search worker (similar to USPTO worker)
+EPO client ready for integration:
+- EPOClient class mirrors USPTOClient pattern
+- CQL query building includes cosmetic CPC codes
+- Legal status parsing ready for active patent filtering
+
+Next steps for 04-02:
+1. Create perform_epo_search function (follow USPTO worker pattern)
+2. Create create_epo_search_worker factory
 3. Integrate EPO search when EU selected
 4. Handle parallel USPTO + EPO searches
+
+**Environment variables needed for EPO testing:**
+- `EPO_OPS_CONSUMER_KEY` - From https://developers.epo.org
+- `EPO_OPS_CONSUMER_SECRET` - From https://developers.epo.org
 
 ---
 *State initialized: 2026-01-21*
