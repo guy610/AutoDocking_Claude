@@ -1,0 +1,12 @@
+.env
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+scan_state.json
+scan.log
+Scientific Articles/
+.claude/
