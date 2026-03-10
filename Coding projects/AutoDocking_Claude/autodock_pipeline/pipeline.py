@@ -1,0 +1,142 @@
+"""
+Main pipeline orchestrator: ties together preparation, docking,
+optimization stages, reporting, and human-in-the-loop checkpoints.
+"""
+
+import logging
+from pathlib import Path
+from typing import List, Optional
+
+from .config import PipelineConfig
+from .core.docking import DockingResult, run_vina
+from .core.ligand import smiles_to_pdbqt, smiles_to_3d
+from .core.receptor import clean_pdb, prepare_receptor_pdbqt
+from .core.checkpoint import interactive_checkpoint
+from .utils.io_utils import ensure_dir
+
+logger = logging.getLogger(__name__)
+
+
+class DockingPipeline:
+    """Orchestrates the full iterative optimization pipeline."""
+
+    def __init__(self, config: PipelineConfig):
+        self.config = config
+        self.all_results: List[DockingResult] = []
+        self.original_score: Optional[float] = None
+        self.original_result: Optional[DockingResult] = None
+        self.receptor_pdbqt: Optional[Path] = None
+        self.receptor_clean_pdb: Optional[Path] = None
+
+    def prepare_receptor(self) -> Path:
+        logger.info("Preparing receptor from: %s", self.config.receptor_pdb)
+        self.receptor_clean_pdb = clean_pdb(self.config)
+        pdbqt = prepare_receptor_pdbqt(self.receptor_clean_pdb, self.config)
+        return pdbqt
+
+    def dock_initial_ligand(self) -> DockingResult:
+        logger.info("Preparing initial ligand: %s", self.config.ligand_name)
+        out_dir = ensure_dir(self.config.output_dir / "initial")
+        smiles_to_3d(self.config.ligand_smiles, name=self.config.ligand_name, output_dir=out_dir)
+        lig_pdbqt = smiles_to_pdbqt(self.config.ligand_smiles, name=self.config.ligand_name, output_dir=out_dir)
+        result = run_vina(
+            receptor_pdbqt=self.receptor_pdbqt,
+            ligand_pdbqt=lig_pdbqt,
+            ligand_name=self.config.ligand_name,
+            smiles=self.config.ligand_smiles,
+            docking_params=self.config.docking,
+            output_dir=out_dir,
+            vina_executable=self.config.vina_executable,
+            origin="initial",
+        )
+        self.all_results.append(result)
+        return result
+
+    def _run_stage_with_checkpoint(self, stage_name, stage_func, seed_results):
+        stage_key = stage_name.lower().replace(" ", "_").replace("-", "_")
+        out_dir = ensure_dir(self.config.output_dir / stage_key)
+        results = stage_func(self.config, self.receptor_pdbqt, seed_results, self.original_score)
+        self.all_results.extend(results)
+        top = sorted(seed_results + results, key=lambda r: r.best_energy)[:self.config.optimization.top_n_select]
+        action, top, branch = interactive_checkpoint(
+            top, stage_name, self.config, self.receptor_pdbqt, out_dir
+        )
+        if action == "rerun":
+            return self._run_stage_with_checkpoint(stage_name, stage_func, seed_results)
+        self.all_results.extend([r for r in top if r not in self.all_results])
+        return top
+
+    def run_sidechain_stage(self, seed_results):
+        from .stages.sidechain import run_sidechain_optimization
+        return self._run_stage_with_checkpoint("Side-Chain Optimization", run_sidechain_optimization, seed_results)
+
+    def run_backbone_stage(self, seed_results):
+        from .stages.backbone import run_backbone_optimization
+        return self._run_stage_with_checkpoint("Backbone Optimization", run_backbone_optimization, seed_results)
+
+    def run_minimization_stage(self, seed_results):
+        from .stages.minimize import run_minimization
+        return self._run_stage_with_checkpoint("Sequence Minimization", run_minimization, seed_results)
+
+    def dock_user_smiles(self) -> List[DockingResult]:
+        out_dir = ensure_dir(self.config.output_dir / "user_specified")
+        results = []
+        for i, smi in enumerate(self.config.user_smiles):
+            name = f"user_{i+1}"
+            try:
+                lig_pdbqt = smiles_to_pdbqt(smi, name=name, output_dir=out_dir)
+                result = run_vina(
+                    receptor_pdbqt=self.receptor_pdbqt, ligand_pdbqt=lig_pdbqt,
+                    ligand_name=name, smiles=smi, docking_params=self.config.docking,
+                    output_dir=out_dir, vina_executable=self.config.vina_executable, origin="user",
+                )
+                results.append(result)
+                self.all_results.append(result)
+                logger.info("User SMILES %d: %s -> %.2f kcal/mol", i+1, smi, result.best_energy)
+            except Exception as e:
+                logger.error("Failed to dock user SMILES %d (%s): %s", i+1, smi, e)
+        return results
+
+    def generate_report(self):
+        logger.info("Report generation not yet implemented (Step 8)")
+
+    def run(self):
+        logger.info("Starting AutoDock Pipeline v0.1.0")
+        logger.info("Run mode: %s", self.config.run_mode)
+        logger.info("Receptor: %s", self.config.receptor_pdb)
+        logger.info("Ligand SMILES: %s", self.config.ligand_smiles)
+
+        self.receptor_pdbqt = self.prepare_receptor()
+        initial_result = self.dock_initial_ligand()
+        self.original_score = initial_result.best_energy
+        self.original_result = initial_result
+        current_best = [initial_result]
+
+        print(f"
+  Initial docking: {initial_result.ligand_name} = {initial_result.best_energy:.2f} kcal/mol")
+
+        if self.config.run_mode == "single_dock":
+            if self.config.user_smiles:
+                self.dock_user_smiles()
+            self.generate_report()
+            print(f"
+  Single-dock mode complete. Results in: {self.config.output_dir}")
+            return
+
+        if "sidechain" in self.config.stages:
+            logger.info("=== Stage 1: Side-Chain Optimization ===")
+            current_best = self.run_sidechain_stage(current_best)
+
+        if "backbone" in self.config.stages:
+            logger.info("=== Stage 2: Backbone Optimization ===")
+            current_best = self.run_backbone_stage(current_best)
+
+        if "minimize" in self.config.stages:
+            logger.info("=== Stage 3: Sequence Minimization ===")
+            current_best = self.run_minimization_stage(current_best)
+
+        if self.config.user_smiles:
+            self.dock_user_smiles()
+
+        self.generate_report()
+        logger.info("Pipeline complete. All results in: %s", self.config.output_dir)
