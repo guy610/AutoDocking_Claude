@@ -17,6 +17,7 @@ from .core.validators import (
     print_validation_alerts, print_binding_alerts,
 )
 from .utils.io_utils import ensure_dir
+from .utils.reporting import results_to_records, generate_csv_report, generate_markdown_report
 
 logger = logging.getLogger(__name__)
 
@@ -96,7 +97,19 @@ class DockingPipeline:
         return results
 
     def generate_report(self):
-        logger.info("Report generation not yet implemented (Step 8)")
+        """Generate CSV and markdown reports for all docked candidates."""
+        records = results_to_records(self.all_results)
+        original_rec = None
+        if self.original_result:
+            recs = results_to_records([self.original_result])
+            if recs:
+                original_rec = recs[0]
+        csv_path = self.config.output_dir / "results_summary.csv"
+        generate_csv_report(records, csv_path)
+        md_path = self.config.output_dir / "results_report.md"
+        generate_markdown_report(records, original_rec, md_path,
+                                 top_n=self.config.optimization.top_n_select)
+        logger.info("Reports written: %s, %s", csv_path, md_path)
 
     def run(self):
         logger.info("Starting AutoDock Pipeline v0.1.0")
