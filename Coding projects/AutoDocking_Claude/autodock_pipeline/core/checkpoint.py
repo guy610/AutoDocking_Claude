@@ -14,6 +14,7 @@ from typing import List, Optional, Tuple
 
 from .docking import DockingResult, run_vina
 from ..config import PipelineConfig
+from .validators import validate_ligand, check_binding_quality, print_validation_alerts, print_binding_alerts
 
 logger = logging.getLogger(__name__)
 
@@ -121,6 +122,13 @@ def _dock_and_merge(smiles_list: List[str],
     for i, smi in enumerate(smiles_list):
         name = f"{origin}_{len(all_results)+1}"
         try:
+            # Validate before docking
+            val = validate_ligand(smi, name=name, max_residues=config.optimization.max_residues)
+            print_validation_alerts(val)
+            if not val.is_valid:
+                print(f"  [!] Skipping invalid SMILES: {'; '.join(val.errors)}")
+                continue
+
             print(f"  Docking {origin} candidate: {smi}")
             lig_pdbqt = smiles_to_pdbqt(smi, name=name, output_dir=output_dir)
             result = run_vina(
@@ -135,6 +143,10 @@ def _dock_and_merge(smiles_list: List[str],
             )
             all_results.append(result)
             print(f"  -> Score: {result.best_energy:.2f} kcal/mol")
+            # Check binding quality
+            bw = check_binding_quality(result.best_energy, name=name,
+                                       poor_binding_threshold=config.optimization.poor_binding_threshold)
+            print_binding_alerts(bw)
         except Exception as e:
             print(f"  [!] Failed to dock {smi}: {e}")
             logger.error("Failed to dock user SMILES %s: %s", smi, e)

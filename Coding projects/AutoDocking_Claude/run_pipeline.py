@@ -61,6 +61,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--num_modes", type=int, default=9)
     p.add_argument("--energy_range", type=int, default=3)
 
+    # Pocket identification
+    p.add_argument("--pocket_residues", nargs="*", default=[],
+                   help="Residue specs to define docking pocket (e.g., A:TYR:45 120 GLU55)")
+
     # Optimization
     p.add_argument("--max_rounds", type=int, default=3,
                    help="Max optimization rounds per stage")
@@ -68,6 +72,12 @@ def build_parser() -> argparse.ArgumentParser:
                    help="Keep top N candidates per round")
     p.add_argument("--delta_threshold", type=float, default=0.5,
                    help="Min improvement (kcal/mol) over original to keep a candidate")
+
+    # Validation
+    p.add_argument("--max_residues", type=int, default=5,
+                   help="Max peptide length in residues (reject above this, default: 5)")
+    p.add_argument("--poor_binding", type=float, default=-4.0,
+                   help="Binding score threshold (kcal/mol) above which an alert is raised (default: -4.0)")
 
     # User-specified candidates
     p.add_argument("--user_smiles", nargs="*", default=[],
@@ -121,6 +131,8 @@ def main(argv=None):
         max_rounds=args.max_rounds,
         top_n_select=args.top_n,
         delta_affinity_threshold=args.delta_threshold,
+        max_residues=args.max_residues,
+        poor_binding_threshold=args.poor_binding,
     )
 
     # Map run mode to stages list
@@ -134,6 +146,7 @@ def main(argv=None):
 
     config = PipelineConfig(
         receptor_pdb=args.receptor,
+        pocket_residues=args.pocket_residues,
         ligand_smiles=args.smiles,
         ligand_name=args.ligand_name,
         user_smiles=args.user_smiles,

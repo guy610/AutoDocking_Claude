@@ -46,6 +46,10 @@ class OptimizationParams:
     min_max_deletions: int = 2
     min_score_tolerance: float = 0.3  # kcal/mol worse than best is still acceptable
 
+    # Validation
+    max_residues: int = 5            # reject peptides longer than this
+    poor_binding_threshold: float = -4.0  # kcal/mol; scores above this trigger alert
+
 
 @dataclass
 class PipelineConfig:
@@ -57,6 +61,9 @@ class PipelineConfig:
 
     # Optional user-specified candidate SMILES
     user_smiles: List[str] = field(default_factory=list)
+
+    # Pocket identification: residue specs for auto-calculating docking box center
+    pocket_residues: List[str] = field(default_factory=list)
 
     # Docking
     docking: DockingParams = field(default_factory=DockingParams)
