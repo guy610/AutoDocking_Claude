@@ -38,17 +38,54 @@ class DockingPipeline:
         return prepare_receptor_pdbqt(self.receptor_clean_pdb, self.config)
 
     def dock_initial_ligand(self) -> DockingResult:
+        from .core.ligand import adjust_protonation
+
         logger.info("Preparing initial ligand: %s", self.config.ligand_name)
-        val = validate_ligand(self.config.ligand_smiles, name=self.config.ligand_name, max_residues=self.config.optimization.max_residues)
-        print_validation_alerts(val)
-        if not val.is_valid:
-            raise ValueError("Ligand validation failed: " + "; ".join(val.errors))
-        out_dir = ensure_dir(self.config.output_dir / "initial")
-        smiles_to_3d(self.config.ligand_smiles, name=self.config.ligand_name, output_dir=out_dir)
-        lig_pdbqt = smiles_to_pdbqt(self.config.ligand_smiles, name=self.config.ligand_name, output_dir=out_dir)
-        result = run_vina(receptor_pdbqt=self.receptor_pdbqt, ligand_pdbqt=lig_pdbqt, ligand_name=self.config.ligand_name, smiles=self.config.ligand_smiles, docking_params=self.config.docking, output_dir=out_dir, vina_executable=self.config.vina_executable, origin="initial")
-        self.all_results.append(result)
-        return result
+
+        # Get pH values to test
+        pH_values = getattr(self.config, 'dock_pH_values', [7.3])
+
+        all_pH_results = []
+
+        for pH in pH_values:
+            # Adjust protonation for this pH
+            adjusted_smiles = adjust_protonation(self.config.ligand_smiles, pH=pH)
+
+            suffix = "" if len(pH_values) == 1 else f"_pH{pH:.1f}"
+            name = self.config.ligand_name + suffix.replace(".", "p")
+
+            val = validate_ligand(adjusted_smiles, name=name,
+                                  max_residues=self.config.optimization.max_residues)
+            print_validation_alerts(val)
+            if not val.is_valid:
+                logger.warning("Ligand validation failed at pH %.1f: %s", pH, "; ".join(val.errors))
+                continue
+
+            out_dir = ensure_dir(self.config.output_dir / "initial")
+            smiles_to_3d(adjusted_smiles, name=name, output_dir=out_dir)
+            lig_pdbqt = smiles_to_pdbqt(adjusted_smiles, name=name, output_dir=out_dir)
+            result = run_vina(
+                receptor_pdbqt=self.receptor_pdbqt,
+                ligand_pdbqt=lig_pdbqt,
+                ligand_name=name,
+                smiles=adjusted_smiles,
+                docking_params=self.config.docking,
+                output_dir=out_dir,
+                vina_executable=self.config.vina_executable,
+                origin="initial",
+            )
+            all_pH_results.append(result)
+            self.all_results.append(result)
+
+            if len(pH_values) > 1:
+                logger.info("  pH %.1f: %s = %.2f kcal/mol", pH, name, result.best_energy)
+
+        if not all_pH_results:
+            raise ValueError("No valid docking results at any pH")
+
+        # Return the best result across all pH values
+        best = min(all_pH_results, key=lambda r: r.best_energy)
+        return best
 
     def _run_stage_with_checkpoint(self, stage_name, stage_func, seed_results):
         stage_key = stage_name.lower().replace(" ", "_").replace("-", "_")

@@ -58,6 +58,7 @@ class PipelineConfig:
     receptor_pdb: Path = Path("receptor.pdb")
     ligand_smiles: str = ""
     ligand_name: str = "ligand"
+    ligand_sequence: str = ""  # original peptide sequence (1-letter codes) if known
 
     # Optional user-specified candidate SMILES
     user_smiles: List[str] = field(default_factory=list)
@@ -86,3 +87,6 @@ class PipelineConfig:
     stages: List[str] = field(default_factory=lambda: [
         "sidechain", "backbone", "minimize"
     ])
+
+    # pH values for protonation state modeling
+    dock_pH_values: List[float] = field(default_factory=lambda: [7.3])  # default physiological only
