@@ -38,15 +38,32 @@ class DockingPipeline:
         return prepare_receptor_pdbqt(self.receptor_clean_pdb, self.config)
 
     def dock_initial_ligand(self) -> DockingResult:
+        from .core.ligand import adjust_protonation
+
         logger.info("Preparing initial ligand: %s", self.config.ligand_name)
-        val = validate_ligand(self.config.ligand_smiles, name=self.config.ligand_name, max_residues=self.config.optimization.max_residues)
+
+        # Adjust protonation for physiological pH 7.3
+        adjusted_smiles = adjust_protonation(self.config.ligand_smiles, pH=7.3)
+
+        val = validate_ligand(adjusted_smiles, name=self.config.ligand_name,
+                              max_residues=self.config.optimization.max_residues)
         print_validation_alerts(val)
         if not val.is_valid:
             raise ValueError("Ligand validation failed: " + "; ".join(val.errors))
+
         out_dir = ensure_dir(self.config.output_dir / "initial")
-        smiles_to_3d(self.config.ligand_smiles, name=self.config.ligand_name, output_dir=out_dir)
-        lig_pdbqt = smiles_to_pdbqt(self.config.ligand_smiles, name=self.config.ligand_name, output_dir=out_dir)
-        result = run_vina(receptor_pdbqt=self.receptor_pdbqt, ligand_pdbqt=lig_pdbqt, ligand_name=self.config.ligand_name, smiles=self.config.ligand_smiles, docking_params=self.config.docking, output_dir=out_dir, vina_executable=self.config.vina_executable, origin="initial")
+        smiles_to_3d(adjusted_smiles, name=self.config.ligand_name, output_dir=out_dir)
+        lig_pdbqt = smiles_to_pdbqt(adjusted_smiles, name=self.config.ligand_name, output_dir=out_dir)
+        result = run_vina(
+            receptor_pdbqt=self.receptor_pdbqt,
+            ligand_pdbqt=lig_pdbqt,
+            ligand_name=self.config.ligand_name,
+            smiles=adjusted_smiles,
+            docking_params=self.config.docking,
+            output_dir=out_dir,
+            vina_executable=self.config.vina_executable,
+            origin="initial",
+        )
         self.all_results.append(result)
         return result
 
@@ -112,7 +129,7 @@ class DockingPipeline:
         logger.info("Reports written: %s, %s", csv_path, md_path)
 
     def run(self):
-        logger.info("Starting AutoDock Pipeline v0.1.0")
+        logger.info("Starting Stephen Docking v0.2.0")
         logger.info("Run mode: %s", self.config.run_mode)
         logger.info("Receptor: %s", self.config.receptor_pdb)
         logger.info("Ligand SMILES: %s", self.config.ligand_smiles)
