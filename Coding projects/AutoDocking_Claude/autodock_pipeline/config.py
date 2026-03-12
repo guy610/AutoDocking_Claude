@@ -88,5 +88,3 @@ class PipelineConfig:
         "sidechain", "backbone", "minimize"
     ])
 
-    # pH values for protonation state modeling
-    dock_pH_values: List[float] = field(default_factory=lambda: [7.3])  # default physiological only

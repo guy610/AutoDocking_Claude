@@ -35,116 +35,87 @@ _IONIZABLE_GROUPS = [
 def adjust_protonation(smiles: str, pH: float = 7.3) -> str:
     """Adjust protonation state of ionizable groups based on pH.
 
-    Uses approximate pKa values for standard amino acid functional groups.
-    At pH < pKa, the group is protonated; at pH > pKa, it is deprotonated.
-
-    Parameters
-    ----------
-    smiles : str
-        Input SMILES string
-    pH : float
-        Target pH value (default 7.3 = physiological)
-
-    Returns
-    -------
-    str
-        SMILES with adjusted protonation state
+    Uses RDKit RWMol to modify protonation at ionizable sites.
+    At pH 7.3 (physiological): ASP/GLU deprotonated, LYS/ARG protonated,
+    HIS neutral. Returns canonical SMILES with adjusted protonation.
     """
     mol = Chem.MolFromSmiles(smiles)
     if mol is None:
-        logger.warning("Cannot parse SMILES for protonation adjustment: %s", smiles)
+        logger.warning("Cannot parse SMILES for protonation: %s", smiles)
         return smiles
 
-    # Work on a copy
-    adjusted_smi = smiles
-    adjusted_mol = Chem.MolFromSmiles(adjusted_smi)
-    if adjusted_mol is None:
-        return smiles
+    rw = Chem.RWMol(mol)
 
-    # 1. Carboxylic acids (ASP, GLU, C-terminus): pKa ~ 3.1-4.1
-    #    At pH 5.0: partially protonated for ASP/GLU
-    #    At pH 7.3: fully deprotonated
-    carboxyl_pka = 4.0
-    acid_neutral = Chem.MolFromSmarts("C(=O)[OH]")
-    acid_charged = Chem.MolFromSmarts("C(=O)[O-]")
-
-    if pH > carboxyl_pka:
-        # Deprotonate: -COOH -> -COO- (remove H from OH, add negative charge)
-        if acid_neutral and adjusted_mol.HasSubstructMatch(acid_neutral):
-            try:
-                repl_from = Chem.MolFromSmiles("C(=O)O")
-                repl_to = Chem.MolFromSmiles("C(=O)[O-]")
-                if repl_from and repl_to:
-                    products = AllChem.ReplaceSubstructs(adjusted_mol, repl_from, repl_to)
-                    if products:
-                        new_smi = Chem.MolToSmiles(products[0])
-                        test = Chem.MolFromSmiles(new_smi)
-                        if test is not None:
-                            adjusted_smi = new_smi
-                            adjusted_mol = test
-            except Exception as e:
-                logger.debug("Carboxyl deprotonation failed: %s", e)
-    else:
-        # Protonate: ensure -COOH form
-        if acid_charged and adjusted_mol.HasSubstructMatch(acid_charged):
-            try:
-                repl_from = Chem.MolFromSmiles("C(=O)[O-]")
-                repl_to = Chem.MolFromSmiles("C(=O)O")
-                if repl_from and repl_to:
-                    products = AllChem.ReplaceSubstructs(adjusted_mol, repl_from, repl_to)
-                    if products:
-                        new_smi = Chem.MolToSmiles(products[0])
-                        test = Chem.MolFromSmiles(new_smi)
-                        if test is not None:
-                            adjusted_smi = new_smi
-                            adjusted_mol = test
-            except Exception as e:
-                logger.debug("Carboxyl protonation failed: %s", e)
+    # 1. Carboxylic acids: ASP/GLU sidechains and C-terminus
+    #    pKa ~ 3.1-4.1 -> deprotonated at pH > 4.5
+    if pH > 4.5:
+        # Find C(=O)OH patterns (carboxylic acid)
+        acid_pat = Chem.MolFromSmarts('[CX3](=O)[OX2H1]')
+        if acid_pat:
+            # Deprotonate: remove H from OH, set charge to -1
+            for match in rw.GetSubstructMatches(acid_pat):
+                o_idx = match[2]  # the OH oxygen
+                o_atom = rw.GetAtomWithIdx(o_idx)
+                if o_atom.GetFormalCharge() == 0 and o_atom.GetTotalNumHs() > 0:
+                    o_atom.SetFormalCharge(-1)
+                    o_atom.SetNoImplicit(True)
+                    o_atom.SetNumExplicitHs(0)
 
     # 2. Histidine imidazole: pKa ~ 6.0
-    #    At pH 5.0: protonated (imidazolium, +1 charge)
-    #    At pH 7.3: neutral
-    his_pka = 6.0
-    if pH < his_pka:
-        # Protonate HIS: add H to the unprotonated N in imidazole
-        his_neutral = Chem.MolFromSmarts("c1c[nH]cn1")
-        if his_neutral and adjusted_mol.HasSubstructMatch(his_neutral):
-            adjusted_smi = adjusted_smi.replace("[nH]cn", "[nH]c[nH+]")
-            test = Chem.MolFromSmiles(adjusted_smi)
-            if test is not None:
-                adjusted_mol = test
-            else:
-                # Revert if invalid
-                adjusted_smi = Chem.MolToSmiles(adjusted_mol)
+    #    At pH < 6: protonated (imidazolium +1)
+    #    At pH > 6: neutral
+    if pH < 6.0:
+        his_pat = Chem.MolFromSmarts('c1c[nH]cn1')
+        if his_pat:
+            for match in rw.GetSubstructMatches(his_pat):
+                # Protonate the non-protonated ring nitrogen
+                for idx in match:
+                    atom = rw.GetAtomWithIdx(idx)
+                    if atom.GetSymbol() == 'N' and atom.GetTotalNumHs() == 0:
+                        atom.SetFormalCharge(1)
+                        atom.SetNumExplicitHs(1)
+                        break
 
-    # 3. Lysine amine: pKa ~ 10.5 (protonated at both pH 5 and 7.3)
-    lys_pka = 10.5
-    if pH < lys_pka:
-        # LYS should be protonated at both pH 5 and 7.3: -NH3+
-        lys_neutral = Chem.MolFromSmarts("CCCCN")
-        if lys_neutral and adjusted_mol.HasSubstructMatch(lys_neutral):
-            # Check if already charged
-            lys_charged = Chem.MolFromSmarts("CCCC[NH3+]")
-            if lys_charged and not adjusted_mol.HasSubstructMatch(lys_charged):
-                try:
-                    repl_from = Chem.MolFromSmiles("CCCCN")
-                    repl_to = Chem.MolFromSmiles("CCCC[NH3+]")
-                    if repl_from and repl_to:
-                        products = AllChem.ReplaceSubstructs(adjusted_mol, repl_from, repl_to)
-                        if products:
-                            new_smi = Chem.MolToSmiles(products[0])
-                            test = Chem.MolFromSmiles(new_smi)
-                            if test is not None:
-                                adjusted_smi = new_smi
-                                adjusted_mol = test
-                except Exception as e:
-                    logger.debug("LYS protonation failed: %s", e)
+    # 3. Lysine primary amine: pKa ~ 10.5
+    #    Protonated (NH3+) at pH < 10.5
+    if pH < 10.5:
+        # Very specific pattern: 4-carbon chain ending in NH2
+        # Use SMARTS that won't match amide N or ring N
+        lys_pat = Chem.MolFromSmarts('[CH2][CH2][CH2][CH2][NH2]')
+        if lys_pat:
+            for match in rw.GetSubstructMatches(lys_pat):
+                n_idx = match[4]
+                n_atom = rw.GetAtomWithIdx(n_idx)
+                if n_atom.GetFormalCharge() == 0:
+                    n_atom.SetFormalCharge(1)
+                    n_atom.SetNumExplicitHs(3)
 
-    # 4. Arginine guanidinium: pKa ~ 12.5 (always protonated)
-    # Usually already represented correctly in SMILES
+    # 4. Arginine guanidinium: pKa ~ 12.5
+    #    Almost always protonated
+    if pH < 12.5:
+        arg_pat = Chem.MolFromSmarts('[NH]C(=[NH])N')
+        if arg_pat:
+            for match in rw.GetSubstructMatches(arg_pat):
+                # Protonate the =NH nitrogen
+                eq_n_idx = match[2]  # the =NH
+                eq_n = rw.GetAtomWithIdx(eq_n_idx)
+                if eq_n.GetFormalCharge() == 0 and eq_n.GetSymbol() == 'N':
+                    eq_n.SetFormalCharge(1)
+                    eq_n.SetNumExplicitHs(2)
 
-    logger.info("Protonation adjusted for pH %.1f: %s", pH, adjusted_smi)
-    return adjusted_smi
+    # Sanitize and return
+    try:
+        Chem.SanitizeMol(rw)
+        result = Chem.MolToSmiles(rw)
+        # Verify the result is a single molecule (no fragmentation)
+        if '.' in result and '.' not in smiles:
+            logger.warning("Protonation adjustment fragmented molecule, reverting")
+            return smiles
+        logger.info("Protonation adjusted for pH %.1f", pH)
+        return result
+    except Exception as e:
+        logger.warning("Protonation sanitization failed: %s, using original", e)
+        return smiles
 
 
 def smiles_to_3d(smiles: str, name: str = "ligand",
