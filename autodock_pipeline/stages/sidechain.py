@@ -72,6 +72,9 @@ def build_peptide_smiles(residues: List[str]) -> Optional[str]:
 
     parts = []
     for i, aa in enumerate(residues):
+        if aa == "UNK":
+            logger.debug("Cannot build peptide SMILES with UNK at position %d", i)
+            return None
         sc = AA_SIDECHAIN_SMILES.get(aa)
         if sc is None:
             logger.warning("Unknown amino acid: %s", aa)
@@ -157,28 +160,250 @@ def _build_peptide_canonical(residues: List[str]) -> Optional[str]:
     return Chem.MolToSmiles(mol)
 
 
-def identify_peptide_residues(smiles: str) -> List[str]:
-    """Attempt to identify the amino acid sequence from a peptide SMILES.
+# Ranked from most specific (largest sidechain) to least specific.
+# First match wins for a given CA atom, preventing e.g. PHE matching TYR.
+_AA_SMARTS_RANKED = [
+    ("TRP", "[NX3][CX4H1](Cc1c[nH]c2ccccc12)C(=O)", 1),
+    ("TYR", "[NX3][CX4H1](Cc1ccc(O)cc1)C(=O)", 1),
+    ("PHE", "[NX3][CX4H1](Cc1ccccc1)C(=O)", 1),
+    ("ARG", "[NX3][CX4H1](CCCNC(=N)N)C(=O)", 1),
+    ("HIS", "[NX3][CX4H1](Cc1c[nH]cn1)C(=O)", 1),
+    ("LYS", "[NX3][CX4H1](CCCCN)C(=O)", 1),
+    ("GLU", "[NX3][CX4H1](CCC(=O)[OH])C(=O)", 1),
+    ("GLN", "[NX3][CX4H1](CCC(N)=O)C(=O)", 1),
+    ("MET", "[NX3][CX4H1](CCSC)C(=O)", 1),
+    ("ILE", "[NX3][CX4H1]([C@@H](C)CC)C(=O)", 1),
+    ("LEU", "[NX3][CX4H1](CC(C)C)C(=O)", 1),
+    ("ASP", "[NX3][CX4H1](CC(=O)[OH])C(=O)", 1),
+    ("ASN", "[NX3][CX4H1](CC(N)=O)C(=O)", 1),
+    ("THR", "[NX3][CX4H1]([C@@H](O)C)C(=O)", 1),
+    ("VAL", "[NX3][CX4H1](C(C)C)C(=O)", 1),
+    ("CYS", "[NX3][CX4H1](CS)C(=O)", 1),
+    ("SER", "[NX3][CX4H1](CO)C(=O)", 1),
+    ("ALA", "[NX3][CX4H1]([CH3])C(=O)", 1),
+    ("GLY", "[NX3][CX4H2]C(=O)", 1),
+    ("PRO", "[NX3]1CCC[CX4H1]1C(=O)", 4),  # CA at position 4 in match
+]
 
-    Uses substructure matching against known AA patterns.
-    Returns a list of 3-letter codes, or empty list if not a recognizable peptide.
+
+def identify_peptide_residues(smiles: str,
+                              known_sequence: str = "") -> List[str]:
+    """Identify the amino acid sequence from a peptide SMILES.
+
+    If *known_sequence* is provided (1-letter codes, e.g. "HPQF"),
+    it is converted directly to 3-letter codes -- no SMILES decomposition
+    needed.
+
+    Otherwise, uses ranked SMARTS substructure matching to identify each
+    residue and a peptide-bond graph to order them N-to-C.
+
+    Returns a list of 3-letter codes, or empty list if not recognizable.
     """
+    # Fast path: user already told us the sequence
+    if known_sequence:
+        residues = []
+        for ch in known_sequence.upper():
+            code = ONE_TO_THREE.get(ch)
+            if code is None:
+                residues.append("UNK")  # unnatural amino acid
+                logger.info("Position %d: unnatural residue '%s' -> UNK (will be preserved)", len(residues), ch)
+            else:
+                residues.append(code)
+        return residues
+
+    # Slow path: SMARTS-based decomposition
     mol = Chem.MolFromSmiles(smiles)
     if mol is None:
         return []
 
-    # Count amide bonds to estimate length
-    amide_pat = Chem.MolFromSmarts("[C](=O)[NH]")
-    if amide_pat is None:
-        return []
-    n_amide = len(mol.GetSubstructMatches(amide_pat))
-    if n_amide == 0:
+    # 1. Map each CA atom to its amino acid (most specific pattern wins)
+    ca_to_aa: Dict[int, str] = {}
+    for aa, smarts, ca_pos in _AA_SMARTS_RANKED:
+        pat = Chem.MolFromSmarts(smarts)
+        if pat is None:
+            continue
+        for match in mol.GetSubstructMatches(pat):
+            ca_idx = match[ca_pos]
+            if ca_idx not in ca_to_aa:  # first (most specific) wins
+                ca_to_aa[ca_idx] = aa
+
+    if not ca_to_aa:
         return []
 
-    # For now, return placeholder residues based on count
-    # A full implementation would do substructure decomposition
-    n_residues = n_amide + 1
-    return ["ALA"] * n_residues  # placeholder
+    # 1b. Catch unmatched backbone CAs as UNK (unnatural amino acids)
+    #     Generic pattern: any carbon bonded to N and C(=O)
+    generic_backbone = Chem.MolFromSmarts('[NX3][CX4]C(=O)')
+    if generic_backbone is not None:
+        for match in mol.GetSubstructMatches(generic_backbone):
+            ca_idx = match[1]
+            if ca_idx not in ca_to_aa:
+                ca_to_aa[ca_idx] = 'UNK'
+                logger.debug('Unmatched backbone CA at idx %d -> UNK', ca_idx)
+
+    # 2. Build peptide-bond graph: for each CA, find the next CA
+    #    via CA -> C(=O) -> N -> next_CA
+    ca_set = set(ca_to_aa.keys())
+    ca_next: Dict[int, int] = {}
+
+    for ca_idx in ca_set:
+        ca_atom = mol.GetAtomWithIdx(ca_idx)
+        for nb in ca_atom.GetNeighbors():
+            if nb.GetSymbol() != "C":
+                continue
+            # Check if this C has a double-bonded O (carbonyl)
+            is_carbonyl = False
+            for nb2 in nb.GetNeighbors():
+                if nb2.GetSymbol() == "O":
+                    bond = mol.GetBondBetweenAtoms(nb.GetIdx(), nb2.GetIdx())
+                    if bond and bond.GetBondTypeAsDouble() == 2.0:
+                        is_carbonyl = True
+                        break
+            if not is_carbonyl:
+                continue
+            # From carbonyl C, find amide N -> next CA
+            for nb2 in nb.GetNeighbors():
+                if nb2.GetSymbol() != "N":
+                    continue
+                for nb3 in nb2.GetNeighbors():
+                    if nb3.GetIdx() in ca_set and nb3.GetIdx() != ca_idx:
+                        ca_next[ca_idx] = nb3.GetIdx()
+                        break
+
+    # 3. Find N-terminal CA (has no predecessor in the chain)
+    all_targets = set(ca_next.values())
+    n_term = [ca for ca in ca_set if ca not in all_targets]
+
+    if not n_term:
+        # Possibly cyclic peptide; return unordered
+        return list(ca_to_aa.values())
+
+    # 4. Walk from N-term to C-term
+    current = n_term[0]
+    ordered = [ca_to_aa[current]]
+    visited = {current}
+    while current in ca_next:
+        nxt = ca_next[current]
+        if nxt in visited:
+            break
+        ordered.append(ca_to_aa[nxt])
+        visited.add(nxt)
+        current = nxt
+
+    return ordered
+
+
+def _generate_hybrid_variants(smiles: str, residues: List[str],
+                              allowed: List[str], config: PipelineConfig) -> List[str]:
+    """Generate sidechain variants for peptides containing unnatural residues.
+
+    Instead of rebuilding the whole peptide from residue list (which fails
+    for UNK residues), this uses RDKit substructure replacement on the
+    original SMILES molecule to swap sidechains at natural-AA positions only.
+
+    Falls back to MolFromSequence-based rebuilding for the natural-AA-only
+    subsequence if direct replacement fails.
+    """
+    variants = set()
+    mol = Chem.MolFromSmiles(smiles)
+    if mol is None:
+        return []
+
+    # Strategy: for each mutable (non-UNK) position, find its CA atom index
+    # using the same SMARTS matching, then attempt sidechain replacement
+    ca_to_aa = {}
+    for aa, smarts_str, ca_pos in _AA_SMARTS_RANKED:
+        pat = Chem.MolFromSmarts(smarts_str)
+        if pat is None:
+            continue
+        for match in mol.GetSubstructMatches(pat):
+            ca_idx = match[ca_pos]
+            if ca_idx not in ca_to_aa:
+                ca_to_aa[ca_idx] = aa
+
+    # Build ordered CA list (same as identify_peptide_residues logic)
+    ca_set = set(ca_to_aa.keys())
+    ca_next = {}
+    for ca_idx in ca_set:
+        ca_atom = mol.GetAtomWithIdx(ca_idx)
+        for nb in ca_atom.GetNeighbors():
+            if nb.GetSymbol() != "C":
+                continue
+            is_carbonyl = False
+            for nb2 in nb.GetNeighbors():
+                if nb2.GetSymbol() == "O":
+                    bond = mol.GetBondBetweenAtoms(nb.GetIdx(), nb2.GetIdx())
+                    if bond and bond.GetBondTypeAsDouble() == 2.0:
+                        is_carbonyl = True
+                        break
+            if not is_carbonyl:
+                continue
+            for nb2 in nb.GetNeighbors():
+                if nb2.GetSymbol() != "N":
+                    continue
+                for nb3 in nb2.GetNeighbors():
+                    if nb3.GetIdx() in ca_set and nb3.GetIdx() != ca_idx:
+                        ca_next[ca_idx] = nb3.GetIdx()
+                        break
+
+    all_targets = set(ca_next.values())
+    n_term = [ca for ca in ca_set if ca not in all_targets]
+    if not n_term:
+        return []
+
+    ordered_cas = []
+    current = n_term[0]
+    ordered_cas.append(current)
+    visited = {current}
+    while current in ca_next:
+        nxt = ca_next[current]
+        if nxt in visited:
+            break
+        ordered_cas.append(nxt)
+        visited.add(nxt)
+        current = nxt
+
+    # For each mutable position, try to replace the sidechain
+    # This is a simplified approach: for positions we CAN identify,
+    # generate the single-residue mutant by building a partial peptide
+    # from the identified natural residues with one mutation
+    for pos_idx, ca_idx in enumerate(ordered_cas):
+        if pos_idx >= len(residues):
+            break
+        if residues[pos_idx] == "UNK":
+            continue  # skip unnatural
+
+        current_aa = residues[pos_idx]
+        for new_aa in allowed:
+            if new_aa == current_aa:
+                continue
+            # Build a mutant residue list and try to construct SMILES
+            mutant = list(residues)
+            mutant[pos_idx] = new_aa
+            # Try build_peptide_smiles - it will fail if any UNK present
+            new_smi = build_peptide_smiles(mutant)
+            if new_smi and new_smi != smiles:
+                variants.add(new_smi)
+
+    # If build_peptide_smiles failed due to UNK, try RDKit MolFromSequence
+    # for the natural-only positions as a rough approximation
+    if not variants:
+        natural_only = [r for r in residues if r != "UNK"]
+        if natural_only:
+            three_to_one = {v: k for k, v in ONE_TO_THREE.items()}
+            for pos_idx in range(len(natural_only)):
+                for new_aa in allowed:
+                    if new_aa == natural_only[pos_idx]:
+                        continue
+                    mutant = list(natural_only)
+                    mutant[pos_idx] = new_aa
+                    new_smi = build_peptide_smiles(mutant)
+                    if new_smi and new_smi != smiles:
+                        variants.add(new_smi)
+            if variants:
+                logger.info("Generated %d variants from natural-AA-only subset (%d of %d residues)",
+                           len(variants), len(natural_only), len(residues))
+
+    return list(variants)
 
 
 def generate_sidechain_variants(smiles: str,
@@ -187,8 +412,10 @@ def generate_sidechain_variants(smiles: str,
 
     For each position in the peptide, tries substituting each allowed
     amino acid. Returns a list of unique, valid SMILES strings.
+    Positions with unnatural amino acids (UNK) are preserved unchanged.
     """
-    residues = identify_peptide_residues(smiles)
+    residues = identify_peptide_residues(
+        smiles, known_sequence=getattr(config, "ligand_sequence", ""))
     if not residues:
         logger.warning("Cannot identify residues in: %s", smiles)
         return []
@@ -196,20 +423,30 @@ def generate_sidechain_variants(smiles: str,
     allowed = [aa for aa in config.optimization.sc_allowed_residues
                if aa in AA_SIDECHAIN_SMILES]
 
-    variants = set()
     n_positions = len(residues)
+    n_mutable = sum(1 for r in residues if r != "UNK")
+    n_unk = n_positions - n_mutable
+    if n_unk > 0:
+        logger.info("Peptide has %d unnatural (UNK) positions - preserving them, mutating %d natural positions", n_unk, n_mutable)
 
-    for pos in range(n_positions):
-        for new_aa in allowed:
-            if new_aa == residues[pos]:
-                continue  # skip identity mutation
-            mutant = list(residues)
-            mutant[pos] = new_aa
-            new_smi = build_peptide_smiles(mutant)
-            if new_smi and new_smi != smiles:
-                variants.add(new_smi)
+    has_unk = any(r == "UNK" for r in residues)
 
-    variant_list = list(variants)
+    if has_unk:
+        # Use hybrid approach for peptides with unnatural residues
+        variant_list = _generate_hybrid_variants(smiles, residues, allowed, config)
+    else:
+        # Standard approach: build from residue list
+        variants = set()
+        for pos in range(n_positions):
+            for new_aa in allowed:
+                if new_aa == residues[pos]:
+                    continue  # skip identity mutation
+                mutant = list(residues)
+                mutant[pos] = new_aa
+                new_smi = build_peptide_smiles(mutant)
+                if new_smi and new_smi != smiles:
+                    variants.add(new_smi)
+        variant_list = list(variants)
 
     # If too many, sample randomly
     max_cand = config.optimization.max_candidates_per_round

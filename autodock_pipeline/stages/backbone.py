@@ -7,6 +7,8 @@ interactions and that are relatively solvent-exposed.
 Modifications include:
   - N-methylation: replace backbone NH with N(CH3) to improve stability
   - D-amino acid substitution: invert stereochemistry at CA
+  - Beta-2 amino acid: insert CH2 between CA and C(=O)
+  - Beta-3 amino acid: insert CH2 between N and CA
 These changes can improve metabolic stability while preserving binding.
 """
 
@@ -64,6 +66,8 @@ def generate_backbone_variants(smiles: str,
     For each candidate position, generate:
       1. N-methylated variant (replace NH with N(C))
       2. D-amino acid variant (invert CA stereochemistry)
+      3. Beta-2 amino acid variant (insert CH2 between CA and C(=O))
+      4. Beta-3 amino acid variant (insert CH2 between N and CA)
     """
     variants = set()
     mol = Chem.MolFromSmiles(smiles)
@@ -118,6 +122,59 @@ def generate_backbone_variants(smiles: str,
                         logger.debug("D-AA at position %d: %s", pos, new_smi)
             except Exception as e:
                 logger.debug("D-AA substitution failed at position %d: %s", pos, e)
+
+    # Beta-2 amino acid: insert CH2 between CA and C(=O)
+    # Pattern: find [NH][CX4H1]C(=O) and convert to [NH][CX4H1]CC(=O)
+    backbone_pat = Chem.MolFromSmarts("[NH][CX4H1]C(=O)")
+    if backbone_pat is not None:
+        matches = mol.GetSubstructMatches(backbone_pat)
+        for pos in candidate_positions:
+            if pos < len(matches):
+                try:
+                    rw_mol = Chem.RWMol(mol)
+                    ca_idx = matches[pos][1]
+                    co_idx = matches[pos][2]
+                    # Remove bond between CA and C(=O)
+                    rw_mol.RemoveBond(ca_idx, co_idx)
+                    # Add new CH2 carbon
+                    ch2_idx = rw_mol.AddAtom(Chem.Atom(6))  # Carbon
+                    # Connect CA-CH2 and CH2-C(=O)
+                    rw_mol.AddBond(ca_idx, ch2_idx, Chem.BondType.SINGLE)
+                    rw_mol.AddBond(ch2_idx, co_idx, Chem.BondType.SINGLE)
+                    new_smi = Chem.MolToSmiles(rw_mol)
+                    if new_smi:
+                        check = Chem.MolFromSmiles(new_smi)
+                        if check is not None:
+                            variants.add(new_smi)
+                            logger.debug("Beta-2 AA at position %d: %s", pos, new_smi)
+                except Exception as e:
+                    logger.debug("Beta-2 insertion failed at position %d: %s", pos, e)
+
+    # Beta-3 amino acid: insert CH2 between N and CA
+    # Pattern: find [NH][CX4H1]C(=O) and convert to [NH]C[CX4H1]C(=O)
+    if backbone_pat is not None:
+        matches = mol.GetSubstructMatches(backbone_pat)
+        for pos in candidate_positions:
+            if pos < len(matches):
+                try:
+                    rw_mol = Chem.RWMol(mol)
+                    n_idx = matches[pos][0]
+                    ca_idx = matches[pos][1]
+                    # Remove bond between N and CA
+                    rw_mol.RemoveBond(n_idx, ca_idx)
+                    # Add new CH2 carbon
+                    ch2_idx = rw_mol.AddAtom(Chem.Atom(6))  # Carbon
+                    # Connect N-CH2 and CH2-CA
+                    rw_mol.AddBond(n_idx, ch2_idx, Chem.BondType.SINGLE)
+                    rw_mol.AddBond(ch2_idx, ca_idx, Chem.BondType.SINGLE)
+                    new_smi = Chem.MolToSmiles(rw_mol)
+                    if new_smi:
+                        check = Chem.MolFromSmiles(new_smi)
+                        if check is not None:
+                            variants.add(new_smi)
+                            logger.debug("Beta-3 AA at position %d: %s", pos, new_smi)
+                except Exception as e:
+                    logger.debug("Beta-3 insertion failed at position %d: %s", pos, e)
 
     return list(variants)
 

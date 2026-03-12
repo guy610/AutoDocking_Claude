@@ -11,4 +11,4 @@ License note: this pipeline calls RDKit (BSD) and AutoDock Vina (Apache-2.0)
 as external dependencies. No GPL-only code is embedded or modified.
 """
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
