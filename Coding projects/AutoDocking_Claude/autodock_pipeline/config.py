@@ -4,7 +4,7 @@ Default configuration and parameter dataclasses for the docking pipeline.
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 
 @dataclass
@@ -37,6 +37,14 @@ class OptimizationParams:
         "GLY", "SER", "THR", "CYS", "TYR", "ASN", "GLN",
         "ASP", "GLU", "LYS", "ARG", "HIS",
     ])
+
+    # Custom (unnatural) amino acid sidechains
+    # Key: a short name (e.g. "NLE", "AIB", "UAA1")
+    # Value: SMILES of the sidechain R-group with [*] marking the bond to CA
+    #   e.g. "[*]CCCC" for norleucine (n-butyl sidechain)
+    #   e.g. "[*](C)C" for alpha-aminoisobutyric acid (two methyl groups)
+    # The [*] atom will be replaced by the alpha carbon during peptide building.
+    sc_custom_sidechains: Dict[str, str] = field(default_factory=dict)
 
     # Backbone stage
     bb_max_positions: int = 2
@@ -87,4 +95,3 @@ class PipelineConfig:
     stages: List[str] = field(default_factory=lambda: [
         "sidechain", "backbone", "minimize"
     ])
-

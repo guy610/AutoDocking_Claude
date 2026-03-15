@@ -34,6 +34,9 @@ class DockingPipeline:
         self.receptor_clean_pdb: Optional[Path] = None
         self.checkpoint_handler = None  # Set for web mode
         self.time_per_dock = 0.0  # Seconds per dock, measured from initial dock
+        self.estimated_end_time = 0.0  # Unix timestamp of estimated completion
+        self.estimated_total_docks = 0  # Total estimated docking operations
+        self.completed_docks = 0  # Docks completed so far
 
     def prepare_receptor(self) -> Path:
         logger.info("Preparing receptor from: %s", self.config.receptor_pdb)
@@ -151,8 +154,57 @@ class DockingPipeline:
                 logger.info("Best candidate: %s (%.2f kcal/mol)",
                             best.ligand_name, best.best_energy)
 
+    def estimate_total_docks(self) -> int:
+        """Estimate total number of docking operations for the full pipeline.
+
+        Uses peptide length and allowed AAs to estimate candidates per stage.
+        Returns total estimated docks across all stages.
+        """
+        from rdkit import Chem
+        # Count residues in the ligand
+        n_residues = 0
+        if self.config.ligand_sequence:
+            n_residues = len(self.config.ligand_sequence)
+        elif self.config.ligand_smiles:
+            mol = Chem.MolFromSmiles(self.config.ligand_smiles)
+            if mol:
+                amide_pat = Chem.MolFromSmarts('[C](=O)[NH]')
+                if amide_pat:
+                    n_residues = len(mol.GetSubstructMatches(amide_pat)) + 1
+
+        if n_residues == 0:
+            n_residues = 3  # fallback
+
+        n_allowed = len(self.config.optimization.sc_allowed_residues)
+        n_custom = len(getattr(self.config.optimization, 'sc_custom_sidechains', {}))
+        n_total_aas = n_allowed + n_custom
+        max_rounds = self.config.optimization.max_rounds
+        max_cand = self.config.optimization.max_candidates_per_round
+        top_n = self.config.optimization.top_n_select
+
+        total = 1  # initial dock
+
+        if 'sidechain' in self.config.stages:
+            sc_per_round = min(n_residues * n_total_aas, max_cand)
+            total += sc_per_round * max_rounds
+
+        if 'backbone' in self.config.stages:
+            bb_pos = min(self.config.optimization.bb_max_positions, n_residues)
+            bb_per_round = 4 * bb_pos * top_n  # 4 modification types
+            total += bb_per_round * max_rounds
+
+        if 'minimize' in self.config.stages:
+            min_del = min(self.config.optimization.min_max_deletions, n_residues)
+            min_per_round = 2 * min_del * top_n  # Gly + Ala replacements
+            total += min_per_round * max_rounds
+
+        if self.config.user_smiles:
+            total += len(self.config.user_smiles)
+
+        return total
+
     def run(self):
-        logger.info("Starting Stephen Docking v0.2.0")
+        logger.info("Starting Stephen Docking v0.4.0")
         logger.info("Run mode: %s", self.config.run_mode)
         logger.info("Receptor: %s", self.config.receptor_pdb)
         logger.info("Ligand SMILES: %s", self.config.ligand_smiles)
@@ -179,6 +231,23 @@ class DockingPipeline:
         print("\n  Initial docking: " + score_str)
         binding_warnings = check_binding_quality(initial_result.best_energy, name=initial_result.ligand_name, poor_binding_threshold=self.config.optimization.poor_binding_threshold)
         print_binding_alerts(binding_warnings)
+
+        # Global time estimation
+        if self.time_per_dock > 0 and self.config.run_mode != "single_dock":
+            total_docks = self.estimate_total_docks()
+            est_total_sec = total_docks * self.time_per_dock
+            if est_total_sec < 60:
+                est_str = "{:.0f} sec".format(est_total_sec)
+            elif est_total_sec < 3600:
+                est_str = "{:.1f} min".format(est_total_sec / 60)
+            else:
+                est_str = "{:.1f} hr".format(est_total_sec / 3600)
+            logger.info("=== Global Estimate: ~%d docks total, ~%s at %.1f sec/dock ===",
+                        total_docks, est_str, self.time_per_dock)
+            self.estimated_end_time = time.time() + est_total_sec
+            self.estimated_total_docks = total_docks
+            self.completed_docks = 1  # initial dock done
+
         if self.config.run_mode == "single_dock":
             if self.config.user_smiles:
                 self.dock_user_smiles()

@@ -1,30 +1,59 @@
-/* Stephen Docking - Web UI JavaScript */
+/* Stephen Docking - Web UI JavaScript v0.4.0 */
 
 (function () {
     "use strict";
 
     // ==================== DOM References ====================
-    const $ = (sel) => document.querySelector(sel);
-    const $$ = (sel) => document.querySelectorAll(sel);
+    var $ = function(sel) { return document.querySelector(sel); };
+    var $$ = function(sel) { return document.querySelectorAll(sel); };
 
-    const formView = $("#form-view");
-    const runningView = $("#running-view");
-    const resultsView = $("#results-view");
-    const errorView = $("#error-view");
-    const checkpointModal = $("#checkpoint-modal");
+    var formView = $("#form-view");
+    var runningView = $("#running-view");
+    var resultsView = $("#results-view");
+    var errorView = $("#error-view");
+    var checkpointModal = $("#checkpoint-modal");
 
-    const dropZone = $("#drop-zone");
-    const receptorFile = $("#receptor-file");
-    const uploadStatus = $("#upload-status");
-    const uploadFilename = $("#upload-filename");
-    const receptorPath = $("#receptor-path");
+    var dropZone = $("#drop-zone");
+    var receptorFile = $("#receptor-file");
+    var uploadStatus = $("#upload-status");
+    var uploadFilename = $("#upload-filename");
+    var receptorPath = $("#receptor-path");
 
-    const startBtn = $("#start-btn");
-    const logViewer = $("#log-viewer");
+    var startBtn = $("#start-btn");
+    var logViewer = $("#log-viewer");
 
-    let currentResults = [];
-    let sortCol = null;
-    let sortAsc = true;
+    var currentResults = [];
+    var sortCol = null;
+    var sortAsc = true;
+    var uaaCounter = 0;
+
+    // ==================== Amino Acid Data ====================
+    var AA_DATA = [
+        { code: "ALA", one: "A", name: "Ala", group: "hydrophobic" },
+        { code: "VAL", one: "V", name: "Val", group: "hydrophobic" },
+        { code: "LEU", one: "L", name: "Leu", group: "hydrophobic" },
+        { code: "ILE", one: "I", name: "Ile", group: "hydrophobic" },
+        { code: "PRO", one: "P", name: "Pro", group: "hydrophobic" },
+        { code: "PHE", one: "F", name: "Phe", group: "hydrophobic" },
+        { code: "TRP", one: "W", name: "Trp", group: "hydrophobic" },
+        { code: "MET", one: "M", name: "Met", group: "hydrophobic" },
+        { code: "GLY", one: "G", name: "Gly", group: "polar" },
+        { code: "SER", one: "S", name: "Ser", group: "polar" },
+        { code: "THR", one: "T", name: "Thr", group: "polar" },
+        { code: "CYS", one: "C", name: "Cys", group: "polar" },
+        { code: "TYR", one: "Y", name: "Tyr", group: "polar" },
+        { code: "ASN", one: "N", name: "Asn", group: "polar" },
+        { code: "GLN", one: "Q", name: "Gln", group: "polar" },
+        { code: "ASP", one: "D", name: "Asp", group: "negative" },
+        { code: "GLU", one: "E", name: "Glu", group: "negative" },
+        { code: "LYS", one: "K", name: "Lys", group: "positive" },
+        { code: "ARG", one: "R", name: "Arg", group: "positive" },
+        { code: "HIS", one: "H", name: "His", group: "positive" },
+    ];
+
+    // Track which AAs are selected (all by default)
+    var selectedAAs = {};
+    AA_DATA.forEach(function(aa) { selectedAAs[aa.code] = true; });
 
     // ==================== Init ====================
     document.addEventListener("DOMContentLoaded", function () {
@@ -36,18 +65,21 @@
         setupCheckpointButtons();
         setupResultsSort();
         setupNewRunButtons();
+        buildAAGrid();
+        setupAAActions();
+        setupUAAButtons();
     });
 
     // ==================== Auto-detect Vina ====================
     function detectVina() {
         fetch("/api/detect_vina")
-            .then((r) => r.json())
-            .then((data) => {
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
                 if (data.found) {
                     $("#vina-path").value = data.found;
                 }
             })
-            .catch(() => {});
+            .catch(function() {});
     }
 
     $("#detect-vina-btn").addEventListener("click", detectVina);
@@ -88,13 +120,12 @@
         dropZone.innerHTML = "<p>Uploading...</p>";
 
         fetch("/api/upload", { method: "POST", body: formData })
-            .then((r) => r.json())
-            .then((data) => {
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
                 if (data.error) {
                     dropZone.innerHTML =
                         '<p style="color:#ef4444">Upload failed: ' +
-                        data.error +
-                        "</p>";
+                        data.error + "</p>";
                     return;
                 }
                 receptorPath.value = data.path;
@@ -103,7 +134,7 @@
                 dropZone.innerHTML =
                     "<p>&#10003; " + data.filename + "</p><p class='small'>Click to change</p>";
             })
-            .catch((err) => {
+            .catch(function(err) {
                 dropZone.innerHTML =
                     '<p style="color:#ef4444">Upload error: ' + err + "</p>";
             });
@@ -111,7 +142,6 @@
 
     // ==================== Radio Toggles ====================
     function setupRadioToggles() {
-        // Ligand mode toggle
         $$('input[name="ligand_mode"]').forEach(function (r) {
             r.addEventListener("change", function () {
                 if (r.value === "sequence") {
@@ -124,7 +154,6 @@
             });
         });
 
-        // Box mode toggle
         $$('input[name="box_mode"]').forEach(function (r) {
             r.addEventListener("change", function () {
                 $("#pocket-input").style.display =
@@ -145,6 +174,103 @@
             var visible = settings.style.display !== "none";
             settings.style.display = visible ? "none" : "block";
             icon.classList.toggle("open", !visible);
+        });
+    }
+
+    // ==================== AA Selection Grid ====================
+    function buildAAGrid() {
+        var grid = $("#aa-grid");
+        if (!grid) return;
+        grid.innerHTML = "";
+
+        AA_DATA.forEach(function(aa) {
+            var div = document.createElement("div");
+            div.className = "aa-toggle selected " + aa.group;
+            div.dataset.code = aa.code;
+            div.innerHTML = '<span class="aa-code">' + aa.one + '</span>' +
+                            '<span class="aa-name">' + aa.name + '</span>';
+            div.addEventListener("click", function() {
+                selectedAAs[aa.code] = !selectedAAs[aa.code];
+                div.classList.toggle("selected", selectedAAs[aa.code]);
+            });
+            grid.appendChild(div);
+        });
+    }
+
+    function setupAAActions() {
+        var selectAll = $("#aa-select-all");
+        var selectNone = $("#aa-select-none");
+        var selectHydrophobic = $("#aa-select-hydrophobic");
+        var selectPolar = $("#aa-select-polar");
+        var selectCharged = $("#aa-select-charged");
+
+        if (selectAll) selectAll.addEventListener("click", function() {
+            AA_DATA.forEach(function(aa) { selectedAAs[aa.code] = true; });
+            updateAAGrid();
+        });
+        if (selectNone) selectNone.addEventListener("click", function() {
+            AA_DATA.forEach(function(aa) { selectedAAs[aa.code] = false; });
+            updateAAGrid();
+        });
+        if (selectHydrophobic) selectHydrophobic.addEventListener("click", function() {
+            AA_DATA.forEach(function(aa) { selectedAAs[aa.code] = false; });
+            AA_DATA.forEach(function(aa) {
+                if (aa.group === "hydrophobic") selectedAAs[aa.code] = true;
+            });
+            updateAAGrid();
+        });
+        if (selectPolar) selectPolar.addEventListener("click", function() {
+            AA_DATA.forEach(function(aa) { selectedAAs[aa.code] = false; });
+            AA_DATA.forEach(function(aa) {
+                if (aa.group === "polar") selectedAAs[aa.code] = true;
+            });
+            updateAAGrid();
+        });
+        if (selectCharged) selectCharged.addEventListener("click", function() {
+            AA_DATA.forEach(function(aa) { selectedAAs[aa.code] = false; });
+            AA_DATA.forEach(function(aa) {
+                if (aa.group === "positive" || aa.group === "negative") selectedAAs[aa.code] = true;
+            });
+            updateAAGrid();
+        });
+    }
+
+    function updateAAGrid() {
+        var toggles = $$(".aa-toggle");
+        toggles.forEach(function(div) {
+            var code = div.dataset.code;
+            div.classList.toggle("selected", !!selectedAAs[code]);
+        });
+    }
+
+    // ==================== UAA (Unnatural AA) Fields ====================
+    function setupUAAButtons() {
+        var addBtn = $("#add-uaa-btn");
+        if (addBtn) {
+            addBtn.addEventListener("click", function() {
+                addUAARow();
+            });
+        }
+    }
+
+    function addUAARow() {
+        uaaCounter++;
+        var list = $("#uaa-list");
+        if (!list) return;
+        var row = document.createElement("div");
+        row.className = "uaa-row";
+        row.id = "uaa-row-" + uaaCounter;
+        row.innerHTML =
+            '<input type="text" class="uaa-name-input" id="uaa-name-' + uaaCounter +
+            '" placeholder="Name (e.g. NLE)">' +
+            '<input type="text" class="uaa-smiles-input" id="uaa-smiles-' + uaaCounter +
+            '" placeholder="Sidechain SMILES with [*] (e.g. [*]CCCC)">' +
+            '<button type="button" class="uaa-remove" data-row="' + uaaCounter +
+            '">&#10005;</button>';
+        list.appendChild(row);
+
+        row.querySelector(".uaa-remove").addEventListener("click", function() {
+            row.remove();
         });
     }
 
@@ -194,7 +320,24 @@
             data.size_y = $("#size-y").value;
             data.size_z = $("#size-z").value;
         }
-        // default box: no coords needed, pipeline uses defaults
+
+        // Collect selected AAs
+        var allowedAAs = [];
+        AA_DATA.forEach(function(aa) {
+            if (selectedAAs[aa.code]) allowedAAs.push(aa.code);
+        });
+        data.sc_allowed_residues = allowedAAs;
+
+        // Collect UAA definitions
+        var uaaRows = $$(".uaa-row");
+        uaaRows.forEach(function(row) {
+            var nameInput = row.querySelector(".uaa-name-input");
+            var smilesInput = row.querySelector(".uaa-smiles-input");
+            if (nameInput && smilesInput && nameInput.value && smilesInput.value) {
+                data["uaa_name_" + nameInput.id.split("-").pop()] = nameInput.value;
+                data["uaa_smiles_" + smilesInput.id.split("-").pop()] = smilesInput.value;
+            }
+        });
 
         return data;
     }
@@ -216,6 +359,15 @@
             alert("Please enter a SMILES string (Step 2).");
             return false;
         }
+        // Check at least 1 AA is selected
+        var anySelected = false;
+        AA_DATA.forEach(function(aa) {
+            if (selectedAAs[aa.code]) anySelected = true;
+        });
+        if (!anySelected) {
+            alert("Please select at least one amino acid for optimization (Step 5).");
+            return false;
+        }
         return true;
     }
 
@@ -233,8 +385,8 @@
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(data),
             })
-                .then((r) => r.json())
-                .then((resp) => {
+                .then(function(r) { return r.json(); })
+                .then(function(resp) {
                     if (resp.error) {
                         alert("Error: " + resp.error);
                         startBtn.disabled = false;
@@ -244,7 +396,7 @@
                     showRunningView();
                     startSSE();
                 })
-                .catch((err) => {
+                .catch(function(err) {
                     alert("Failed to start: " + err);
                     startBtn.disabled = false;
                     startBtn.textContent = "Start Pipeline";
@@ -264,6 +416,9 @@
     function showResultsView() {
         runningView.style.display = "none";
         resultsView.style.display = "block";
+        // Hide countdown
+        var cb = $("#countdown-bar");
+        if (cb) cb.style.display = "none";
     }
 
     function showErrorView(message, traceback) {
@@ -271,6 +426,33 @@
         errorView.style.display = "block";
         $("#error-message").textContent = message;
         $("#error-traceback").textContent = traceback || "";
+    }
+
+    // ==================== Countdown Timer ====================
+    function formatCountdown(seconds) {
+        if (seconds <= 0) return "Complete!";
+        if (seconds < 60) return Math.round(seconds) + " sec remaining";
+        if (seconds < 3600) return (seconds / 60).toFixed(1) + " min remaining";
+        return (seconds / 3600).toFixed(1) + " hr remaining";
+    }
+
+    function updateCountdown(data) {
+        var bar = $("#countdown-bar");
+        if (!bar) return;
+        bar.style.display = "block";
+
+        var remaining = data.estimated_remaining_sec || 0;
+        var completed = data.completed_docks || 0;
+        var total = data.total_docks || 1;
+        var speed = data.time_per_dock || 0;
+
+        $("#countdown-text").textContent = formatCountdown(remaining);
+        $("#docks-completed").textContent = completed;
+        $("#docks-total").textContent = total;
+        $("#dock-speed").textContent = speed > 0 ? speed.toFixed(1) : "-";
+
+        var pct = total > 0 ? Math.min(100, (completed / total) * 100) : 0;
+        $("#progress-fill").style.width = pct.toFixed(1) + "%";
     }
 
     // ==================== SSE Streaming ====================
@@ -281,6 +463,11 @@
             var data = JSON.parse(e.data);
             appendLog(data.level, data.message);
             updateStageFromLog(data.message);
+        });
+
+        source.addEventListener("progress", function (e) {
+            var data = JSON.parse(e.data);
+            updateCountdown(data);
         });
 
         source.addEventListener("checkpoint", function (e) {
@@ -320,7 +507,6 @@
 
     function updateStageFromLog(message) {
         var msg = message.toLowerCase();
-        var stages = $$(".stage");
         if (msg.indexOf("preparing receptor") >= 0 || msg.indexOf("preparation") >= 0) {
             setActiveStage("prep");
         } else if (msg.indexOf("initial dock") >= 0 || msg.indexOf("running initial") >= 0) {
@@ -390,12 +576,8 @@
             var raw = $("#cp-inject-smiles").value.trim();
             var smiles = raw
                 .split("\n")
-                .map(function (s) {
-                    return s.trim();
-                })
-                .filter(function (s) {
-                    return s.length > 0;
-                });
+                .map(function (s) { return s.trim(); })
+                .filter(function (s) { return s.length > 0; });
             sendCheckpoint({ action: "continue", smiles: smiles });
         });
     }
@@ -418,7 +600,7 @@
         tbody.innerHTML = "";
 
         if (!results || results.length === 0) {
-            tbody.innerHTML = "<tr><td colspan='5'>No results</td></tr>";
+            tbody.innerHTML = "<tr><td colspan='6'>No results</td></tr>";
             return;
         }
 
@@ -437,6 +619,7 @@
                 "<td>" + (r.rank || "") + "</td>" +
                 "<td>" + esc(r.ligand_name || r.name || "") + "</td>" +
                 "<td>" + (r.docking_score || r.score || "") + "</td>" +
+                "<td>" + esc(r.stereo || "-") + "</td>" +
                 "<td>" + esc(r.origin || "") + "</td>" +
                 "<td title='" + esc(r.smiles || "") + "'>" +
                 esc((r.smiles || "").substring(0, 50)) +
@@ -456,13 +639,11 @@
                     sortAsc = true;
                 }
 
-                // Update header classes
                 $$("#results-table th").forEach(function (h) {
                     h.classList.remove("sort-asc", "sort-desc");
                 });
                 th.classList.add(sortAsc ? "sort-asc" : "sort-desc");
 
-                // Sort
                 currentResults.sort(function (a, b) {
                     var va = a[col] || a.ligand_name || "";
                     var vb = b[col] || b.ligand_name || "";

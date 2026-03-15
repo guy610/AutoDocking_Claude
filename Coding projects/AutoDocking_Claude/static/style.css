@@ -1,4 +1,4 @@
-/* Stephen Docking - Web UI Styles */
+/* Stephen Docking - Web UI Styles v0.4.0 */
 
 * {
     margin: 0;
@@ -264,6 +264,215 @@ label {
     transform: rotate(180deg);
 }
 
+/* ==================== AA Selection Grid ==================== */
+.aa-help {
+    font-size: 0.85rem;
+    color: #64748b;
+    margin-bottom: 12px;
+}
+
+.aa-help code {
+    background: #f1f5f9;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: "SF Mono", "Fira Code", Menlo, Consolas, monospace;
+    font-size: 0.82rem;
+    color: #2563eb;
+}
+
+.aa-actions {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+}
+
+.aa-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+.aa-toggle {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 8px 4px;
+    border: 2px solid #e2e8f0;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.15s;
+    background: #fff;
+    user-select: none;
+}
+
+.aa-toggle:hover {
+    border-color: #93c5fd;
+    background: #f0f7ff;
+}
+
+.aa-toggle.selected {
+    border-color: #2563eb;
+    background: #eff6ff;
+}
+
+.aa-toggle .aa-code {
+    font-weight: 700;
+    font-size: 0.95rem;
+    color: #0f172a;
+}
+
+.aa-toggle .aa-name {
+    font-size: 0.65rem;
+    color: #94a3b8;
+    margin-top: 2px;
+    text-transform: uppercase;
+}
+
+.aa-toggle.selected .aa-code {
+    color: #2563eb;
+}
+
+/* Hydrophobic AAs get a subtle warm tint when selected */
+.aa-toggle.hydrophobic.selected {
+    border-color: #f59e0b;
+    background: #fffbeb;
+}
+.aa-toggle.hydrophobic.selected .aa-code {
+    color: #d97706;
+}
+
+/* Charged AAs get a subtle blue/red tint */
+.aa-toggle.positive.selected {
+    border-color: #3b82f6;
+    background: #eff6ff;
+}
+.aa-toggle.negative.selected {
+    border-color: #ef4444;
+    background: #fef2f2;
+}
+.aa-toggle.negative.selected .aa-code {
+    color: #dc2626;
+}
+
+/* UAA Section */
+.uaa-section {
+    border-top: 1px solid #e2e8f0;
+    padding-top: 16px;
+    margin-top: 8px;
+}
+
+.uaa-section h3 {
+    font-size: 1rem;
+    font-weight: 600;
+    margin-bottom: 8px;
+    color: #0f172a;
+}
+
+.uaa-row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 8px;
+    align-items: center;
+}
+
+.uaa-row input {
+    padding: 8px 10px;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    font-size: 0.9rem;
+}
+
+.uaa-row .uaa-name-input {
+    width: 100px;
+}
+
+.uaa-row .uaa-smiles-input {
+    flex: 1;
+    font-family: "SF Mono", "Fira Code", Menlo, Consolas, monospace;
+}
+
+.uaa-row .uaa-remove {
+    width: 28px;
+    height: 28px;
+    border: none;
+    border-radius: 50%;
+    background: #fee2e2;
+    color: #dc2626;
+    font-size: 1rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s;
+}
+
+.uaa-row .uaa-remove:hover {
+    background: #fecaca;
+}
+
+/* ==================== Countdown Timer ==================== */
+.countdown-bar {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 14px 18px;
+    margin-bottom: 16px;
+}
+
+.countdown-inner {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+}
+
+.countdown-text {
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: #0f172a;
+}
+
+.countdown-stats {
+    font-size: 0.82rem;
+    color: #64748b;
+    margin-top: 6px;
+}
+
+/* Progress Bar */
+.progress-track {
+    width: 100%;
+    height: 8px;
+    background: #e2e8f0;
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #2563eb, #7c3aed);
+    border-radius: 4px;
+    transition: width 0.5s ease;
+}
+
+/* ==================== Spinning Wheel ==================== */
+.spinner {
+    width: 22px;
+    height: 22px;
+    border: 3px solid #e2e8f0;
+    border-top: 3px solid #2563eb;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    flex-shrink: 0;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
 /* Buttons */
 .btn {
     padding: 10px 24px;
@@ -297,6 +506,11 @@ label {
 
 .btn-secondary:hover {
     background: #cbd5e1;
+}
+
+.btn-small {
+    padding: 5px 12px;
+    font-size: 0.8rem;
 }
 
 .btn-start {
@@ -521,6 +735,10 @@ tr:hover {
     .coord-grid,
     .settings-grid {
         grid-template-columns: repeat(2, 1fr);
+    }
+
+    .aa-grid {
+        grid-template-columns: repeat(4, 1fr);
     }
 
     .radio-group {

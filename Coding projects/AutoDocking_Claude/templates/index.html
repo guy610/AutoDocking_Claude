@@ -15,7 +15,7 @@
 <div class="container">
     <header>
         <h1>Stephen Docking</h1>
-        <p class="subtitle">Peptide Optimization Pipeline</p>
+        <p class="subtitle">Peptide Optimization Pipeline v0.4.0</p>
     </header>
 
     <!-- ==================== FORM VIEW ==================== -->
@@ -137,9 +137,37 @@
             </div>
         </div>
 
-        <!-- Step 5: Advanced Settings -->
+        <!-- Step 5: Amino Acid Selection -->
         <div class="card step">
             <div class="step-badge">5</div>
+            <h2>Amino Acid Selection</h2>
+            <p class="aa-help">Select which amino acids to include in sidechain optimization. All 20 natural AAs are enabled by default.</p>
+            <div class="aa-actions">
+                <button type="button" id="aa-select-all" class="btn btn-secondary btn-small">Select All</button>
+                <button type="button" id="aa-select-none" class="btn btn-secondary btn-small">Deselect All</button>
+                <button type="button" id="aa-select-hydrophobic" class="btn btn-secondary btn-small">Hydrophobic</button>
+                <button type="button" id="aa-select-polar" class="btn btn-secondary btn-small">Polar</button>
+                <button type="button" id="aa-select-charged" class="btn btn-secondary btn-small">Charged</button>
+            </div>
+            <div id="aa-grid" class="aa-grid">
+                <!-- Populated by JavaScript -->
+            </div>
+
+            <!-- Custom UAA Section -->
+            <div class="uaa-section">
+                <h3>Custom Amino Acids <span class="optional">(unnatural)</span></h3>
+                <p class="aa-help">Add unnatural amino acid sidechains using SMILES. Use <code>[*]</code> to mark the bond to the alpha carbon.</p>
+                <p class="aa-help">Example: <code>[*]CCCC</code> for norleucine, <code>[*](C)C</code> for AIB</p>
+                <div id="uaa-list">
+                    <!-- UAA rows added by JavaScript -->
+                </div>
+                <button type="button" id="add-uaa-btn" class="btn btn-secondary btn-small">+ Add Custom AA</button>
+            </div>
+        </div>
+
+        <!-- Step 6: Advanced Settings -->
+        <div class="card step">
+            <div class="step-badge">6</div>
             <h2 class="collapsible-header" id="advanced-toggle">
                 Advanced Settings
                 <span class="collapse-icon">&#9660;</span>
@@ -178,9 +206,9 @@
             </div>
         </div>
 
-        <!-- Step 6: Vina Executable -->
+        <!-- Step 7: Vina Executable -->
         <div class="card step">
-            <div class="step-badge">6</div>
+            <div class="step-badge">7</div>
             <h2>Vina Executable</h2>
             <div class="inline-group">
                 <input type="text" id="vina-path" placeholder="Path to vina executable" class="text-input flex-grow">
@@ -188,16 +216,16 @@
             </div>
         </div>
 
-        <!-- Step 7: Output Directory -->
+        <!-- Step 8: Output Directory -->
         <div class="card step">
-            <div class="step-badge">7</div>
+            <div class="step-badge">8</div>
             <h2>Output Directory</h2>
             <input type="text" id="output-dir" value="./output" class="text-input">
         </div>
 
-        <!-- Step 8: Additional SMILES -->
+        <!-- Step 9: Additional SMILES -->
         <div class="card step">
-            <div class="step-badge">8</div>
+            <div class="step-badge">9</div>
             <h2>Additional SMILES <span class="optional">(optional)</span></h2>
             <textarea id="user-smiles" rows="4" placeholder="One SMILES string per line" class="text-input textarea"></textarea>
         </div>
@@ -212,6 +240,23 @@
     <div id="running-view" style="display:none">
         <div class="card">
             <h2>Pipeline Running</h2>
+
+            <!-- Countdown Timer -->
+            <div id="countdown-bar" class="countdown-bar" style="display:none">
+                <div class="countdown-inner">
+                    <div class="spinner"></div>
+                    <span id="countdown-text" class="countdown-text">Estimating...</span>
+                </div>
+                <div class="progress-track">
+                    <div id="progress-fill" class="progress-fill" style="width:0%"></div>
+                </div>
+                <div class="countdown-stats">
+                    <span id="docks-completed">0</span> / <span id="docks-total">?</span> docks
+                    &middot;
+                    <span id="dock-speed">-</span> sec/dock
+                </div>
+            </div>
+
             <div id="stage-indicator" class="stage-indicator">
                 <span class="stage" data-stage="prep">Preparation</span>
                 <span class="stage-arrow">&#8594;</span>
@@ -273,6 +318,7 @@
                             <th data-col="rank" class="sortable">Rank</th>
                             <th data-col="name" class="sortable">Name</th>
                             <th data-col="docking_score" class="sortable">Score (kcal/mol)</th>
+                            <th data-col="stereo" class="sortable">Stereo (R/S)</th>
                             <th data-col="origin" class="sortable">Origin</th>
                             <th data-col="smiles" class="sortable">SMILES</th>
                         </tr>

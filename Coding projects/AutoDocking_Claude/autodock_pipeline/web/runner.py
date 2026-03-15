@@ -154,6 +154,21 @@ class PipelineRunner:
             num_modes=int(d.get("num_modes", 9)),
             energy_range=int(d.get("energy_range", 3)),
         )
+        # Parse allowed residues from web form (if provided)
+        allowed_residues = d.get("sc_allowed_residues", [])
+        if isinstance(allowed_residues, str):
+            allowed_residues = [s.strip() for s in allowed_residues.split(",") if s.strip()]
+
+        # Parse custom UAA sidechains
+        custom_sidechains = {}
+        for key, val in d.items():
+            if key.startswith("uaa_name_") and val:
+                idx = key.split("_")[-1]
+                smi_key = "uaa_smiles_" + idx
+                smi_val = d.get(smi_key, "")
+                if smi_val:
+                    custom_sidechains[val.strip()] = smi_val.strip()
+
         optimization = OptimizationParams(
             max_rounds=int(d.get("max_rounds", 3)),
             top_n_select=int(d.get("top_n", 5)),
@@ -161,6 +176,10 @@ class PipelineRunner:
             max_residues=int(d.get("max_residues", 5)),
             poor_binding_threshold=float(d.get("poor_binding", -4.0)),
         )
+        if allowed_residues:
+            optimization.sc_allowed_residues = allowed_residues
+        if custom_sidechains:
+            optimization.sc_custom_sidechains = custom_sidechains
         mode = d.get("run_mode", "full")
         if mode == "single_dock":
             stages = []
@@ -228,6 +247,27 @@ class PipelineRunner:
             config = self._build_config()
             pipeline = DockingPipeline(config)
             pipeline.checkpoint_handler = self.checkpoint_handler
+
+            # Start a timer thread that emits progress events
+            import time as _time
+            self._pipeline = pipeline
+
+            def _emit_progress():
+                while self.is_running and not self.is_complete:
+                    if pipeline.estimated_end_time > 0:
+                        remaining = max(0, pipeline.estimated_end_time - _time.time())
+                        self.event_queue.put({
+                            "type": "progress",
+                            "estimated_remaining_sec": round(remaining, 1),
+                            "completed_docks": pipeline.completed_docks,
+                            "total_docks": pipeline.estimated_total_docks,
+                            "time_per_dock": round(pipeline.time_per_dock, 1),
+                        })
+                    _time.sleep(3)  # emit every 3 seconds
+
+            progress_thread = threading.Thread(target=_emit_progress, daemon=True)
+            progress_thread.start()
+
             pipeline.run()
 
             # Collect results
@@ -239,6 +279,7 @@ class PipelineRunner:
                 d = {"rank": i + 1, "ligand_name": rec.uid,
                      "docking_score": rec.docking_score,
                      "origin": rec.origin, "smiles": rec.smiles,
+                     "stereo": rec.stereo,
                      "score": rec.docking_score}
                 self.results.append(d)
 

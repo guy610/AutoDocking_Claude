@@ -53,6 +53,79 @@ AA_SIDECHAIN_SMILES = {
     "HIS": "Cc1c[nH]cn1",
 }
 
+def _validate_custom_sidechain(sc_smiles):
+    """Validate a custom sidechain SMILES with [*] attachment point.
+
+    Uses RDKit to build a full residue by replacing [*] with a backbone CA.
+    Returns the sidechain fragment string if valid, None otherwise.
+
+    Handles branching sidechains (e.g. [*](C)C for AIB) by using
+    RDKit molecule editing instead of string manipulation.
+    """
+    mol = Chem.MolFromSmiles(sc_smiles)
+    if mol is None:
+        return None
+
+    # Find wildcard atom
+    wild_idx = None
+    for atom in mol.GetAtoms():
+        if atom.GetAtomicNum() == 0:
+            wild_idx = atom.GetIdx()
+            break
+
+    if wild_idx is None:
+        # No wildcard - treat whole string as fragment, validate directly
+        test = Chem.MolFromSmiles('NC(' + sc_smiles + ')C(=O)O')
+        return sc_smiles if test is not None else None
+
+    # Build a full residue by replacing [*] with CA + backbone
+    rw = Chem.RWMol(mol)
+    rw.GetAtomWithIdx(wild_idx).SetAtomicNum(6)  # [*] -> C (becomes CA)
+    n_idx = rw.AddAtom(Chem.Atom(7))  # N
+    rw.AddBond(wild_idx, n_idx, Chem.BondType.SINGLE)
+    co_idx = rw.AddAtom(Chem.Atom(6))  # C(=O)
+    rw.AddBond(wild_idx, co_idx, Chem.BondType.SINGLE)
+    o_double = rw.AddAtom(Chem.Atom(8))  # =O
+    rw.AddBond(co_idx, o_double, Chem.BondType.DOUBLE)
+    o_single = rw.AddAtom(Chem.Atom(8))  # -OH
+    rw.AddBond(co_idx, o_single, Chem.BondType.SINGLE)
+
+    try:
+        Chem.SanitizeMol(rw)
+        residue_smi = Chem.MolToSmiles(rw)
+        # Extract the sidechain portion (for simple sidechains, strip [*])
+        fragment = sc_smiles.replace('[*]', '')
+        if not fragment:
+            fragment = '[H]'
+        return fragment
+    except Exception:
+        return None
+
+
+def get_all_sidechains(config=None):
+    """Return combined dict of natural + custom sidechains.
+
+    Custom sidechains use [*] convention: the [*] atom marks where the
+    sidechain bonds to the alpha carbon.
+
+    Example: '[*]CCCC' (norleucine) -> sidechain fragment 'CCCC'
+    Example: '[*](C)C' (AIB) -> validated via RDKit residue building
+    """
+    sidechains = dict(AA_SIDECHAIN_SMILES)
+    if config is not None:
+        custom = getattr(config, 'optimization', None)
+        if custom:
+            for name, smi in getattr(custom, 'sc_custom_sidechains', {}).items():
+                fragment = _validate_custom_sidechain(smi)
+                if fragment is not None:
+                    sidechains[name.upper()] = fragment
+                    logger.info("Registered custom AA: %s (sidechain: %s from %s)",
+                               name.upper(), fragment, smi)
+                else:
+                    logger.warning("Invalid custom sidechain SMILES for %s: %s", name, smi)
+    return sidechains
+
+
 # Single-letter to 3-letter mapping for convenience
 ONE_TO_THREE = {
     "G": "GLY", "A": "ALA", "V": "VAL", "L": "LEU", "I": "ILE",
@@ -62,11 +135,14 @@ ONE_TO_THREE = {
 }
 
 
-def build_peptide_smiles(residues: List[str]) -> Optional[str]:
+def build_peptide_smiles(residues: List[str], all_sidechains: dict = None) -> Optional[str]:
     """Build a linear peptide SMILES from a list of 3-letter AA codes.
 
     Creates: H-[NH-CHR-C(=O)]-...-OH
     Returns None if any residue is unknown or PRO (special handling needed).
+
+    If all_sidechains is provided, it is used instead of AA_SIDECHAIN_SMILES
+    to look up R-group fragments (supports custom/unnatural amino acids).
     """
     if not residues:
         return None
@@ -76,7 +152,7 @@ def build_peptide_smiles(residues: List[str]) -> Optional[str]:
         if aa == "UNK":
             logger.debug("Cannot build peptide SMILES with UNK at position %d", i)
             return None
-        sc = AA_SIDECHAIN_SMILES.get(aa)
+        sc = all_sidechains.get(aa) if all_sidechains else AA_SIDECHAIN_SMILES.get(aa)
         if sc is None:
             logger.warning("Unknown amino acid: %s", aa)
             return None
@@ -92,8 +168,10 @@ def build_peptide_smiles(residues: List[str]) -> Optional[str]:
             else:
                 parts.append("NCC(=O)")
         else:
-            if i == 0:
-                frag = "NC({sc})C(=O)".format(sc=sc)
+            if sc.startswith("("):
+                # Branching sidechain (e.g. AIB: "(C)C")
+                # Template: NC{sc}C(=O) without extra parens
+                frag = "NC" + sc + "C(=O)"
             else:
                 frag = "NC({sc})C(=O)".format(sc=sc)
             parts.append(frag)
@@ -421,8 +499,14 @@ def generate_sidechain_variants(smiles: str,
         logger.warning("Cannot identify residues in: %s", smiles)
         return []
 
+    all_sc = get_all_sidechains(config)
     allowed = [aa for aa in config.optimization.sc_allowed_residues
-               if aa in AA_SIDECHAIN_SMILES]
+               if aa in all_sc]
+    # Also include custom UAAs in allowed list
+    for name in getattr(config.optimization, 'sc_custom_sidechains', {}):
+        uname = name.upper()
+        if uname in all_sc and uname not in allowed:
+            allowed.append(uname)
 
     n_positions = len(residues)
     n_mutable = sum(1 for r in residues if r != "UNK")
@@ -444,7 +528,7 @@ def generate_sidechain_variants(smiles: str,
                     continue  # skip identity mutation
                 mutant = list(residues)
                 mutant[pos] = new_aa
-                new_smi = build_peptide_smiles(mutant)
+                new_smi = build_peptide_smiles(mutant, all_sidechains=all_sc)
                 if new_smi and new_smi != smiles:
                     variants[new_smi] = "Pos{}: {}->{}".format(pos + 1, residues[pos], new_aa)
         variant_list = [(smi, ann) for smi, ann in variants.items()]
