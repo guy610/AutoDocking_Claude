@@ -1,0 +1,564 @@
+================================================================================
+                    STEPHEN DOCKING v0.4.0 - INSTALLATION & USAGE GUIDE
+              Automated Peptide Optimization Pipeline with AutoDock Vina
+================================================================================
+
+
+WHAT IS STEPHEN DOCKING?
+========================
+
+Stephen Docking is a computational tool that finds the best peptide binder for
+a protein target of interest. It is designed for bench scientists who want to
+optimize peptide-protein interactions without needing to write code.
+
+How it works:
+  - You provide a protein structure (PDB file) and a starting peptide sequence.
+  - The tool uses AutoDock Vina, a widely-used molecular docking engine, to
+    predict how strongly each peptide variant binds to your protein.
+  - It automatically generates and tests thousands of mutations, including:
+      * All 20 natural amino acids at each position
+      * Unnatural amino acids (UAAs) you define via SMILES
+      * Backbone modifications (beta-amino acids, N-methyl variants)
+      * Residue deletions to find minimal binding motifs
+  - Results are ranked by predicted binding energy (kcal/mol).
+
+The pipeline runs in three stages:
+
+  Stage 1 - SIDECHAIN OPTIMIZATION
+    Tests all selected natural and unnatural amino acid substitutions at each
+    position of your peptide. Keeps the top performers from each round.
+
+  Stage 2 - BACKBONE MODIFICATION
+    Takes the best peptides from Stage 1 and tests backbone variants such as
+    beta-amino acids and N-methylated residues. These modifications can improve
+    protease resistance and bioavailability.
+
+  Stage 3 - MINIMIZE (Residue Deletion)
+    Systematically removes residues from the optimized peptide to find the
+    shortest sequence that retains strong binding. Shorter peptides are cheaper
+    to synthesize and often have better cell permeability.
+
+A Flask-based web interface guides you through every step -- no command line
+knowledge is needed after initial setup.
+
+
+REQUIREMENTS
+============
+
+  - Windows 10 or Windows 11 (64-bit)
+  - Python 3.9 or newer (Python 3.11+ recommended)
+  - Internet connection for initial package installation
+  - At least 4 GB of free RAM (8 GB recommended for large proteins)
+  - About 500 MB of disk space for software and dependencies
+
+
+STEP-BY-STEP INSTALLATION
+==========================
+
+1. INSTALL PYTHON
+-----------------
+
+If you do not already have Python installed:
+
+  a) Go to https://www.python.org/downloads/
+  b) Download Python 3.11 or newer (click the big yellow button).
+  c) Run the installer.
+
+     *** IMPORTANT ***
+     On the very first screen of the installer, CHECK THE BOX that says:
+         [x] Add Python to PATH
+     This is critical. Without it, the commands below will not work.
+
+  d) Click "Install Now" and wait for it to finish.
+  e) Verify the installation:
+     - Press Windows+R, type "cmd", press Enter
+     - In the black Command Prompt window, type:
+
+         python --version
+
+     - You should see something like "Python 3.11.7"
+     - If you get an error, restart your computer and try again.
+
+
+2. INSTALL CONDA (Recommended)
+------------------------------
+
+Conda makes it much easier to install RDKit (the chemistry library).
+If you already have Anaconda or Miniconda, skip to step (c).
+
+  a) Go to https://conda-forge.org/miniforge/
+     Download the Windows x86_64 installer (Miniforge3-Windows-x86_64.exe).
+
+  b) Run the installer. Use default settings. When asked about PATH, select
+     "Add Miniforge to my PATH environment variable."
+
+  c) Open "Miniforge Prompt" from the Start Menu (or Command Prompt if you
+     added Miniforge to PATH).
+
+  d) Create a dedicated environment:
+
+         conda create -n docking python=3.11 rdkit -y
+
+     This installs Python 3.11 and RDKit together. It may take a few minutes.
+
+  e) Activate the environment:
+
+         conda activate docking
+
+     You should see "(docking)" at the beginning of your prompt.
+
+  f) Install the remaining packages:
+
+         pip install flask meeko
+
+  ALTERNATIVE (pip only, no Conda):
+  If you prefer not to use Conda, you can try installing everything with pip:
+
+         pip install rdkit meeko flask
+
+  Note: RDKit installation via pip can sometimes be tricky on Windows.
+  The Conda method above is more reliable.
+
+
+3. DOWNLOAD AUTODOCK VINA
+-------------------------
+
+AutoDock Vina is the docking engine that does the actual binding calculations.
+
+  a) Go to https://github.com/ccsb-scripps/AutoDock-Vina/releases
+  b) Download the latest Windows binary. It will be named something like:
+         vina_1.2.5_win_x86_64.exe
+  c) Place the downloaded .exe file directly in the StephenDocking folder
+     (the same folder that contains web_app.py).
+  d) The app will auto-detect the Vina executable when you run it.
+     You do NOT need to rename the file.
+
+
+4. EXTRACT STEPHEN DOCKING
+---------------------------
+
+  a) Locate the file: StephenDocking_v0.4.0.zip
+  b) Right-click the zip file and select "Extract All..."
+  c) Choose a location (e.g., C:\Users\YourName\Desktop\StephenDocking_v0.4.0)
+  d) Click "Extract."
+
+  After extraction, the folder should contain:
+
+     StephenDocking_v0.4.0/
+       web_app.py              - Main application file
+       wizard.py               - Pipeline wizard (alternative CLI interface)
+       autodock_pipeline/       - Core pipeline code
+       static/                  - Web interface assets (CSS, JavaScript)
+       templates/               - Web interface HTML templates
+       Banner/                  - Application banner images
+       requirements.txt         - Python package list
+       INSTRUCTIONS.txt         - This file
+
+
+HOW TO RUN
+==========
+
+  1) Open Command Prompt (or Miniforge Prompt if you installed Conda).
+
+  2) If using Conda, activate your environment:
+
+         conda activate docking
+
+  3) Navigate to the StephenDocking folder:
+
+         cd C:\path\to\StephenDocking_v0.4.0
+
+     For example:
+         cd C:\Users\YourName\Desktop\StephenDocking_v0.4.0
+
+  4) Start the application:
+
+         python web_app.py
+
+  5) Your web browser should open automatically to:
+
+         http://127.0.0.1:5000
+
+     If it does not open automatically, open your browser and go to that
+     address manually.
+
+  6) To stop the application, go back to the Command Prompt and press Ctrl+C.
+
+
+USING THE WEB INTERFACE
+========================
+
+The web interface guides you through 9 steps. Each step is a panel on the page.
+Fill them out from top to bottom, then click "Run Pipeline."
+
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+STEP 1: RECEPTOR PDB
+---------------------
+Upload your protein structure file.
+
+  Supported formats: .pdb, .pdbqt, .cif
+
+  Where to get a PDB file:
+    - RCSB Protein Data Bank (https://www.rcsb.org) -- search by protein name
+      or PDB ID (e.g., "5H0U"), then download the PDB file.
+    - PyMOL -- export your prepared structure as a .pdb file.
+    - AlphaFold -- for predicted structures.
+
+  Preparation tips:
+    - Remove water molecules (HOH residues) before uploading.
+    - Remove co-crystallized ligands unless they define the binding site.
+    - Remove duplicate chains if only one copy is needed.
+    - The tool will handle protonation at pH 7.3 automatically.
+
+  Click "Choose File", select your PDB, and click Upload. The filename will
+  appear below the button to confirm the upload.
+
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+STEP 2: LIGAND INPUT
+--------------------
+Provide your starting peptide.
+
+  Peptide Sequence:
+    Enter the peptide using standard one-letter amino acid codes.
+    Examples:
+      AGFK      (4-residue peptide: Ala-Gly-Phe-Lys)
+      RVKR      (4-residue peptide: Arg-Val-Lys-Arg)
+      GHKCU     (Note: non-standard codes may need SMILES instead)
+
+  Alternatively, you can provide a SMILES string for non-standard peptides
+  or small molecules.
+
+  Ligand Name:
+    Give your peptide a short, descriptive name (e.g., "GHK_tripeptide",
+    "P93_lead"). This name will appear in the results table.
+
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+STEP 3: DOCKING BOX
+--------------------
+Define where on the protein the peptide should bind.
+
+  Option A - Pocket Residues (Recommended):
+    Enter key residues at the binding site in the format:
+        ALA123, GLY456, HIS789
+    The tool will automatically calculate a docking box that covers these
+    residues with appropriate padding. This is the easiest and most reliable
+    method if you know which residues are in or near the active site.
+
+  Option B - Manual Coordinates:
+    Specify the center (X, Y, Z) and size (X, Y, Z) of the docking box
+    directly. Use this if you have exact coordinates from another tool
+    (e.g., PyMOL or a previous docking study).
+    Example: Center 12.5, 34.2, -5.8 / Size 20, 20, 20
+
+  Option C - Default:
+    If you leave this blank, the tool will attempt to detect the largest
+    pocket on the protein surface automatically using the built-in pocket
+    finder. This works well for proteins with a clear, deep binding site
+    but may be unreliable for flat surfaces.
+
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+STEP 4: RUN MODE
+-----------------
+Choose how much optimization to perform.
+
+  Single Dock:
+    Docks your peptide once and reports the score. Use this for a quick
+    sanity check -- does your peptide bind at all? Takes about 30 seconds.
+
+  Sidechain Only:
+    Runs Stage 1 only (sidechain optimization). Tests amino acid
+    substitutions at each position. Good for a quick optimization run.
+    Takes 10-60 minutes depending on peptide length and settings.
+
+  Full Pipeline (Recommended for production):
+    Runs all three stages: Sidechain, Backbone, and Minimize. This gives
+    the most thorough optimization. Takes 30 minutes to several hours
+    depending on peptide length and exhaustiveness settings.
+
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+STEP 5: AMINO ACID SELECTION
+-----------------------------
+Choose which amino acids to test at each position.
+
+  Natural Amino Acids:
+    A grid of 20 toggle buttons, one for each natural amino acid.
+    Click to select (highlighted) or deselect (gray).
+
+    Group buttons for quick selection:
+      [Hydrophobic]  - A, V, L, I, M, F, W, P (nonpolar side chains)
+      [Polar]        - S, T, N, Q, Y, C, G     (uncharged polar)
+      [Charged]      - D, E, K, R, H           (charged at pH 7)
+      [All]          - Select all 20
+      [None]         - Deselect all
+
+  Custom Unnatural Amino Acids (UAAs):
+    Add non-standard amino acids using SMILES notation. Each UAA SMILES
+    must start with [*] which represents the attachment point to the
+    peptide backbone (the alpha-carbon).
+
+    Convention:  [*] replaces the alpha-carbon and its hydrogen.
+                 Everything after [*] is the side chain.
+
+    Examples:
+      [*]CCCC          Norleucine (straight 4-carbon chain)
+      [*](C)C          AIB / alpha-aminoisobutyric acid (two methyl groups)
+      [*]c1ccccc1      Phenylglycine (phenyl ring directly on alpha-C)
+      [*]CCSc1ccccc1   S-benzyl-homocysteine
+      [*]CC(=O)N       Beta-asparagine analog
+
+    Enter one SMILES per line in the UAA text box. Give each a short name.
+
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+STEP 6: ADVANCED SETTINGS
+--------------------------
+Fine-tune the docking parameters. Default values work well for most cases.
+
+  Exhaustiveness (default: 8)
+    Controls how thoroughly Vina searches for binding poses. Higher values
+    give more reliable results but take longer.
+    - 8:  Standard (good for screening)
+    - 16: Thorough (good for final results)
+    - 32: Very thorough (for publication-quality results)
+
+  Num Modes (default: 9)
+    Maximum number of binding poses to generate per docking run.
+    The best pose (lowest energy) is used for scoring.
+
+  Max Rounds (default: 3)
+    Number of optimization rounds per stage. In each round, the top
+    peptides are mutated again. More rounds = deeper optimization but
+    longer runtime.
+
+  Top N (default: 5)
+    Number of top-scoring peptides to carry forward between rounds.
+    Higher values explore more diversity but increase runtime.
+
+  Delta Threshold (default: 0.5 kcal/mol)
+    Minimum improvement required to accept a mutation. If a mutation
+    improves the score by less than this threshold, it is discarded.
+    Lower values keep more marginal improvements.
+
+  Max Residues (default: 5)
+    Maximum peptide length for the Minimize stage. Residue deletion
+    will not shrink the peptide below this length.
+
+  Poor Binding Cutoff (default: -4.0 kcal/mol)
+    Peptides scoring worse (less negative) than this value are flagged
+    as poor binders and may be dropped from further optimization.
+
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+STEP 7: VINA EXECUTABLE
+-------------------------
+Tell the app where to find the AutoDock Vina program.
+
+  Auto-Detect (Recommended):
+    Click the "Auto-Detect" button. The app will search the current folder
+    and common locations for the Vina executable. If found, the path will
+    be filled in automatically.
+
+  Manual Path:
+    If auto-detect does not find it, browse to or type the full path to
+    the vina .exe file. Example:
+        C:\Users\YourName\Desktop\StephenDocking_v0.4.0\vina_1.2.5_win_x86_64.exe
+
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+STEP 8: OUTPUT DIRECTORY
+-------------------------
+Choose where results are saved.
+
+  Default: ./output  (a folder called "output" inside the StephenDocking folder)
+
+  You can change this to any folder on your computer. The folder will be
+  created automatically if it does not exist.
+
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+STEP 9: ADDITIONAL SMILES (Optional)
+--------------------------------------
+Provide extra candidate molecules to include in the docking screen.
+
+  Enter one SMILES string per line. These will be docked alongside the
+  peptide variants generated by the pipeline.
+
+  Use this to compare your optimized peptides against:
+    - Known inhibitors or binders
+    - Competitor peptides
+    - Small molecule controls
+
+  Leave blank if you have no additional candidates.
+
+
+RUNNING AND VIEWING RESULTS
+============================
+
+After clicking "Run Pipeline":
+
+  - A stage indicator shows which stage is currently running
+    (Stage 1: Sidechain, Stage 2: Backbone, Stage 3: Minimize).
+  - A countdown timer estimates remaining time for the current stage.
+  - A live log panel shows real-time output from the docking engine.
+  - Between stages, the pipeline pauses at checkpoints so you can review
+    intermediate results before continuing to the next stage.
+
+Results Table:
+  When complete, a results table appears with the following columns:
+
+    Rank    - Position in the ranking (1 = best binder)
+    Name    - Peptide name or identifier
+    Score   - Predicted binding energy in kcal/mol (more negative = stronger)
+    Stereo  - Stereochemistry annotation (R/S at each chiral center)
+    Origin  - Which stage/round produced this variant
+    SMILES  - Chemical structure in SMILES notation
+
+  You can:
+    - Download the full results as a CSV file for further analysis
+    - Download the best complex PDB to visualize in PyMOL or similar
+
+
+INTERPRETING RESULTS
+====================
+
+Binding scores are in kcal/mol. More negative = stronger predicted binding.
+
+  Score Range          Interpretation
+  -----------------    ------------------------------------------------
+  Above -4.0           Very weak or no meaningful binding
+  -4.0 to -6.0        Weak binding (may not be biologically relevant)
+  -6.0 to -8.0        Moderate binding (worth investigating)
+  -8.0 to -10.0       Strong binding (good lead candidate)
+  Below -10.0          Very strong binding (excellent candidate)
+
+Important notes:
+  - Always compare scores RELATIVE to your starting peptide. A 2 kcal/mol
+    improvement is significant.
+  - These are computational predictions. Promising candidates should be
+    validated experimentally (SPR, ITC, pull-down assays, etc.).
+  - Scores between different proteins are NOT directly comparable.
+  - The pipeline tests both R and S stereoisomers at each modified position.
+    Check the Stereo column to know which isomer is predicted to bind better.
+
+
+TROUBLESHOOTING
+===============
+
+Problem: "No module named rdkit"
+Solution: Install RDKit.
+    With Conda:  conda install -c conda-forge rdkit
+    With pip:    pip install rdkit
+
+Problem: "No module named meeko"
+Solution: pip install meeko
+
+Problem: "No module named flask"
+Solution: pip install flask
+
+Problem: "Vina executable not found" or "Vina not found"
+Solution: Download AutoDock Vina from the GitHub releases page (see
+    Installation Step 3 above) and place the .exe in the StephenDocking
+    folder. Then click Auto-Detect or enter the path manually in Step 7.
+
+Problem: "Port 5000 is already in use"
+Solution: Another application is using port 5000. Either close that
+    application, or run Stephen Docking on a different port:
+        python web_app.py --port 5001
+    Then go to http://127.0.0.1:5001 in your browser.
+
+Problem: Browser does not open automatically
+Solution: Open your browser manually and go to:
+    http://127.0.0.1:5000
+
+Problem: "Permission denied" errors
+Solution: Right-click Command Prompt and select "Run as Administrator."
+
+Problem: Pipeline hangs or takes very long
+Solution: Try reducing Exhaustiveness to 4 and Max Rounds to 2 for a
+    faster (but less thorough) run. Also check that your protein is not
+    unusually large (>5000 residues).
+
+Problem: "UnicodeDecodeError" or encoding issues
+Solution: Make sure your PDB file uses standard ASCII characters. Re-download
+    from RCSB if needed.
+
+
+FILE STRUCTURE
+==============
+
+StephenDocking_v0.4.0/
+|
+|-- web_app.py                   Main Flask web application
+|-- wizard.py                    CLI wizard (alternative to web UI)
+|-- requirements.txt             Python package dependencies
+|-- INSTRUCTIONS.txt             This installation and usage guide
+|
+|-- autodock_pipeline/           Core pipeline package
+|   |-- __init__.py              Package initialization and version info
+|   |-- pipeline.py              Main pipeline orchestration logic
+|   |-- core/                    Core computational modules
+|   |   |-- receptor.py          Protein receptor preparation
+|   |   |-- pocket.py            Binding pocket detection
+|   |   |-- docking.py           AutoDock Vina docking interface
+|   |   |-- interactions.py      Protein-ligand interaction analysis
+|   |   |-- checkpoint.py        Pipeline checkpoint/resume system
+|   |-- stages/                  Optimization stage implementations
+|   |   |-- sidechain.py         Stage 1: Sidechain optimization
+|   |   |-- backbone.py          Stage 2: Backbone modification
+|   |   |-- minimize.py          Stage 3: Residue deletion
+|   |-- utils/                   Utility modules
+|   |   |-- io_utils.py          File I/O and format conversion
+|   |-- web/                     Web interface backend
+|
+|-- static/                      Web UI static assets
+|   |-- css/                     Stylesheets
+|   |-- js/                      JavaScript (pipeline control, UI logic)
+|
+|-- templates/                   HTML templates for the web interface
+|
+|-- Banner/                      Application banner and logo images
+|
+|-- output/                      Default output directory (created on run)
+|   |-- results.csv              Final ranked results
+|   |-- best_complex.pdb         Best docked complex structure
+|   |-- stage1_results/          Sidechain optimization intermediates
+|   |-- stage2_results/          Backbone modification intermediates
+|   |-- stage3_results/          Minimize stage intermediates
+
+
+VERSION HISTORY
+===============
+
+v0.4.0 (Current Release)
+  - Amino acid selection grid with group toggle buttons
+  - Custom unnatural amino acid (UAA) support via SMILES input
+  - Stereo annotation (R/S) for all modified positions
+  - Countdown timer with per-stage time estimation
+  - Improved UI layout and responsiveness
+
+v0.3.0
+  - Web-based user interface (Flask)
+  - Fixed encoding issues with Unicode characters in PDB files
+  - Mutation annotations in results (shows what changed at each position)
+  - Time estimation for pipeline stages
+
+v0.2.0
+  - Initial web interface
+  - Checkpoint system for pausing between stages
+  - Basic results table with CSV export
+
+v0.1.0
+  - Command-line pipeline (no web UI)
+  - Core docking with AutoDock Vina
+  - Basic sidechain optimization
+
+
+================================================================================
+                          Questions or issues?
+             Contact the developer or open a GitHub issue.
+================================================================================
