@@ -22,15 +22,35 @@ def get_stereo_annotation(smiles: str) -> str:
     at each chiral center along the peptide backbone.
 
     Uses RDKit FindMolChiralCenters to identify stereochemistry.
+    If the SMILES lacks explicit stereo, generates 3D coordinates to assign it.
     """
     try:
         from rdkit import Chem
+        from rdkit.Chem import AllChem
         mol = Chem.MolFromSmiles(smiles)
         if mol is None:
             return ""
 
-        # Find all chiral centers with R/S assignments
+        # Try direct stereo detection first
         chiral_centers = Chem.FindMolChiralCenters(mol, includeUnassigned=True)
+
+        # If all centers are unassigned (?), try 3D embedding to resolve
+        if chiral_centers and all(rs == "?" for _, rs in chiral_centers):
+            try:
+                mol3d = Chem.AddHs(mol)
+                AllChem.EmbedMolecule(mol3d, AllChem.ETKDGv3())
+                if mol3d.GetNumConformers() > 0:
+                    AllChem.MMFFOptimizeMolecule(mol3d)
+                    Chem.AssignAtomChiralTagsFromStructure(mol3d)
+                    Chem.AssignStereochemistry(mol3d, cleanIt=True, force=True)
+                    chiral_3d = Chem.FindMolChiralCenters(mol3d, includeUnassigned=True)
+                    # Map back to original atom indices (AddHs preserves heavy atom order)
+                    if chiral_3d:
+                        chiral_centers = [(idx, rs) for idx, rs in chiral_3d
+                                          if idx < mol.GetNumAtoms()]
+            except Exception:
+                pass  # fall back to original (?) assignments
+
         if not chiral_centers:
             return ""
 
@@ -40,7 +60,6 @@ def get_stereo_annotation(smiles: str) -> str:
             if atom.GetSymbol() != "C":
                 continue
             neighbors = [nb.GetSymbol() for nb in atom.GetNeighbors()]
-            # CA is bonded to N and to a carbonyl C
             has_n = "N" in neighbors
             has_carbonyl = False
             for nb in atom.GetNeighbors():

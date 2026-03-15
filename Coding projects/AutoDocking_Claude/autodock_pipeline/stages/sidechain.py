@@ -173,7 +173,8 @@ def build_peptide_smiles(residues: List[str], all_sidechains: dict = None) -> Op
                 # Template: NC{sc}C(=O) without extra parens
                 frag = "NC" + sc + "C(=O)"
             else:
-                frag = "NC({sc})C(=O)".format(sc=sc)
+                # Use [C@@H] for L-amino acid (S) stereochemistry
+                frag = "N[C@@H]({sc})C(=O)".format(sc=sc)
             parts.append(frag)
 
     # Join with peptide bonds: remove terminal C(=O) from last, add OH
