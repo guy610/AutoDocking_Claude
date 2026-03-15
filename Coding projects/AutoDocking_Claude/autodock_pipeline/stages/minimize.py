@@ -11,8 +11,9 @@ Strategy:
 """
 
 import logging
+import time
 from pathlib import Path
-from typing import List
+from typing import List, Tuple
 
 from rdkit import Chem
 
@@ -51,7 +52,7 @@ def identify_dispensable_residues(metrics: InteractionMetrics,
 
 def generate_minimized_variants(smiles: str,
                                 dispensable_positions: List[int],
-                                config: PipelineConfig) -> List[str]:
+                                config: PipelineConfig) -> List[Tuple[str, str]]:
     """Generate truncated / simplified candidate SMILES.
 
     For dispensable positions:
@@ -61,7 +62,7 @@ def generate_minimized_variants(smiles: str,
 
     Uses RDKit SMARTS to identify and manipulate amide bonds.
     """
-    variants = set()
+    variants = {}
     mol = Chem.MolFromSmiles(smiles)
     if mol is None:
         return []
@@ -108,7 +109,7 @@ def generate_minimized_variants(smiles: str,
             if new_smi and new_smi != smiles:
                 check = Chem.MolFromSmiles(new_smi)
                 if check is not None:
-                    variants.add(new_smi)
+                    variants[new_smi] = "Pos{}: ->GLY".format(pos + 1)
         except Exception as e:
             logger.debug("Gly replacement at pos %d failed: %s", pos, e)
 
@@ -118,11 +119,11 @@ def generate_minimized_variants(smiles: str,
             if new_smi and new_smi != smiles:
                 check = Chem.MolFromSmiles(new_smi)
                 if check is not None:
-                    variants.add(new_smi)
+                    variants[new_smi] = "Pos{}: ->ALA".format(pos + 1)
         except Exception as e:
             logger.debug("Ala replacement at pos %d failed: %s", pos, e)
 
-    return list(variants)
+    return [(smi, ann) for smi, ann in variants.items()]
 
 
 def _replace_residue_with_gly(smiles: str, position: int, n_residues: int) -> str:
@@ -154,18 +155,22 @@ def _replace_residue_with_ala(smiles: str, position: int, n_residues: int) -> st
     return build_peptide_smiles(new_residues) or ""
 
 
+def _format_time(seconds):
+    """Format seconds into a human-readable string."""
+    if seconds < 60:
+        return "{:.0f} sec".format(seconds)
+    elif seconds < 3600:
+        return "{:.1f} min".format(seconds / 60)
+    else:
+        return "{:.1f} hr".format(seconds / 3600)
+
+
 def run_minimization(config: PipelineConfig,
                      receptor_pdbqt,
                      initial_results: List[DockingResult],
-                     original_score: float) -> List[DockingResult]:
-    """Execute the iterative sequence-minimization loop.
-
-    For each round:
-      1. Compute interactions for the best pose.
-      2. Identify dispensable residues.
-      3. Generate minimized variants (deletions, Gly/Ala substitutions).
-      4. Dock and keep variants within score tolerance of the best.
-    """
+                     original_score: float,
+                     time_per_dock: float = 0.0) -> List[DockingResult]:
+    """Execute the iterative sequence-minimization loop."""
     out_dir = ensure_dir(config.output_dir / "minimize")
     all_results = []
     current_seeds = list(initial_results)
@@ -198,21 +203,39 @@ def run_minimization(config: PipelineConfig,
             logger.info("No dispensable residues found, stopping minimization")
             break
 
-        all_variants = []
+        logger.info("Dispensable positions: %s",
+                     ", ".join(["Pos{}(contacts={})".format(p + 1, metrics.per_residue_position.get(p, {}).get("n_total", "?")) for p in dispensable]))
+
+        # Generate annotated variants
+        all_variants_with_ann = []
+        seen_smiles = set()
         for s in current_seeds:
             n_res = len(metrics.per_residue_position)
             variants = generate_minimized_variants(s.smiles, dispensable, config)
-            all_variants.extend(variants)
+            for smi, ann in variants:
+                if smi not in seen_smiles:
+                    seen_smiles.add(smi)
+                    all_variants_with_ann.append((smi, ann))
 
-        all_variants = list(set(all_variants))
-        if not all_variants:
+        if not all_variants_with_ann:
             logger.info("No minimized variants generated, stopping")
             break
 
-        logger.info("Docking %d minimized candidates", len(all_variants))
-        round_results = []
+        # Time estimation
+        rounds_remaining = config.optimization.max_rounds - round_num
+        if time_per_dock > 0:
+            est_this_round = len(all_variants_with_ann) * time_per_dock
+            est_future = rounds_remaining * len(all_variants_with_ann) * time_per_dock
+            logger.info("Estimated time: this round ~%s, remaining ~%s (%d docks x %.1f sec/dock)",
+                        _format_time(est_this_round),
+                        _format_time(est_this_round + est_future),
+                        len(all_variants_with_ann), time_per_dock)
 
-        for i, smi in enumerate(all_variants):
+        logger.info("Docking %d minimized candidates", len(all_variants_with_ann))
+        round_results = []
+        round_start = time.time()
+
+        for i, (smi, annotation) in enumerate(all_variants_with_ann):
             name = "min_r{:02d}_{:03d}".format(round_num, i + 1)
             val = validate_ligand(smi, name=name,
                                   max_residues=config.optimization.max_residues)
@@ -220,6 +243,7 @@ def run_minimization(config: PipelineConfig,
             if not val.is_valid:
                 continue
             try:
+                dock_start = time.time()
                 lig_pdbqt = smiles_to_pdbqt(smi, name=name, output_dir=round_dir)
                 result = run_vina(
                     receptor_pdbqt=receptor_pdbqt,
@@ -231,15 +255,24 @@ def run_minimization(config: PipelineConfig,
                     vina_executable=config.vina_executable,
                     origin="minimize",
                 )
+                dock_elapsed = time.time() - dock_start
+                if time_per_dock <= 0:
+                    time_per_dock = dock_elapsed
+                else:
+                    time_per_dock = 0.7 * time_per_dock + 0.3 * dock_elapsed
                 round_results.append(result)
                 all_results.append(result)
-                logger.info("  %s: %.2f kcal/mol", name, result.best_energy)
+                logger.info("  %s [%s]: %.2f kcal/mol (%.1fs)",
+                            name, annotation, result.best_energy, dock_elapsed)
             except Exception as e:
-                logger.error("Failed to dock %s: %s", name, e)
+                logger.error("Failed to dock %s [%s]: %s", name, annotation, e)
 
+        round_elapsed = time.time() - round_start
         if not round_results:
             logger.info("No successful minimization results, stopping")
             break
+
+        logger.info("Round %d completed in %s", round_num, _format_time(round_elapsed))
 
         # For minimization, accept results within score tolerance
         tolerance = config.optimization.min_score_tolerance
@@ -260,4 +293,3 @@ def run_minimization(config: PipelineConfig,
 
     logger.info("Minimization complete: %d total candidates docked", len(all_results))
     return all_results
-

@@ -1,5 +1,5 @@
 """
-AutoDock Pipeline – Iterative peptide hit optimization via AutoDock Vina.
+AutoDock Pipeline - Iterative peptide hit optimization via AutoDock Vina.
 
 Stages:
   0. Input preparation & initial docking

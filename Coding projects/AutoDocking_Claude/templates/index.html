@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stephen Docking - Peptide Optimization Pipeline</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<div class="banner">
+    <img src="/banner/StevenDocking_5.png" alt="Stephen Docking Banner">
+</div>
+
+<div class="container">
+    <header>
+        <h1>Stephen Docking</h1>
+        <p class="subtitle">Peptide Optimization Pipeline</p>
+    </header>
+
+    <!-- ==================== FORM VIEW ==================== -->
+    <div id="form-view">
+
+        <!-- Step 1: Receptor -->
+        <div class="card step">
+            <div class="step-badge">1</div>
+            <h2>Receptor PDB</h2>
+            <div id="drop-zone" class="drop-zone">
+                <p>Drag &amp; drop your receptor PDB file here</p>
+                <p class="small">or click to browse</p>
+                <input type="file" id="receptor-file" accept=".pdb,.pdbqt,.cif" hidden>
+            </div>
+            <div id="upload-status" class="upload-status" style="display:none">
+                <span class="check-icon">&#10003;</span>
+                <span id="upload-filename"></span>
+            </div>
+            <input type="hidden" id="receptor-path" value="">
+        </div>
+
+        <!-- Step 2: Ligand Input -->
+        <div class="card step">
+            <div class="step-badge">2</div>
+            <h2>Ligand Input</h2>
+            <div class="radio-group">
+                <label class="radio-label">
+                    <input type="radio" name="ligand_mode" value="sequence" checked>
+                    Peptide Sequence
+                </label>
+                <label class="radio-label">
+                    <input type="radio" name="ligand_mode" value="smiles">
+                    SMILES
+                </label>
+            </div>
+            <div id="ligand-sequence-input">
+                <label for="ligand-sequence">Peptide Sequence (one-letter codes)</label>
+                <input type="text" id="ligand-sequence" placeholder="e.g. ACDEFG" class="text-input">
+            </div>
+            <div id="ligand-smiles-input" style="display:none">
+                <label for="ligand-smiles">SMILES String</label>
+                <input type="text" id="ligand-smiles" placeholder="e.g. CC(=O)NC..." class="text-input">
+            </div>
+            <div class="form-row">
+                <label for="ligand-name">Ligand Name</label>
+                <input type="text" id="ligand-name" value="ligand" class="text-input">
+            </div>
+        </div>
+
+        <!-- Step 3: Docking Box -->
+        <div class="card step">
+            <div class="step-badge">3</div>
+            <h2>Docking Box</h2>
+            <div class="radio-group">
+                <label class="radio-label">
+                    <input type="radio" name="box_mode" value="pocket" checked>
+                    Pocket Residues
+                </label>
+                <label class="radio-label">
+                    <input type="radio" name="box_mode" value="manual">
+                    Manual Coordinates
+                </label>
+                <label class="radio-label">
+                    <input type="radio" name="box_mode" value="default">
+                    Default (full box at origin)
+                </label>
+            </div>
+            <div id="pocket-input">
+                <label for="pocket-residues">Pocket Residues (comma-separated)</label>
+                <input type="text" id="pocket-residues" placeholder="e.g. ALA123, GLY456, HIS789" class="text-input">
+            </div>
+            <div id="manual-input" style="display:none">
+                <div class="coord-grid">
+                    <div>
+                        <label>Center X</label>
+                        <input type="number" id="center-x" value="0" step="0.1" class="num-input">
+                    </div>
+                    <div>
+                        <label>Center Y</label>
+                        <input type="number" id="center-y" value="0" step="0.1" class="num-input">
+                    </div>
+                    <div>
+                        <label>Center Z</label>
+                        <input type="number" id="center-z" value="0" step="0.1" class="num-input">
+                    </div>
+                    <div>
+                        <label>Size X</label>
+                        <input type="number" id="size-x" value="20" step="1" class="num-input">
+                    </div>
+                    <div>
+                        <label>Size Y</label>
+                        <input type="number" id="size-y" value="20" step="1" class="num-input">
+                    </div>
+                    <div>
+                        <label>Size Z</label>
+                        <input type="number" id="size-z" value="20" step="1" class="num-input">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 4: Run Mode -->
+        <div class="card step">
+            <div class="step-badge">4</div>
+            <h2>Run Mode</h2>
+            <div class="radio-group">
+                <label class="radio-label">
+                    <input type="radio" name="run_mode" value="single_dock">
+                    Single Dock
+                </label>
+                <label class="radio-label">
+                    <input type="radio" name="run_mode" value="sidechain">
+                    Sidechain Only
+                </label>
+                <label class="radio-label">
+                    <input type="radio" name="run_mode" value="full" checked>
+                    Full Pipeline (all 3 stages)
+                </label>
+            </div>
+        </div>
+
+        <!-- Step 5: Advanced Settings -->
+        <div class="card step">
+            <div class="step-badge">5</div>
+            <h2 class="collapsible-header" id="advanced-toggle">
+                Advanced Settings
+                <span class="collapse-icon">&#9660;</span>
+            </h2>
+            <div id="advanced-settings" class="collapsible" style="display:none">
+                <div class="settings-grid">
+                    <div>
+                        <label for="exhaustiveness">Exhaustiveness</label>
+                        <input type="number" id="exhaustiveness" value="8" min="1" class="num-input">
+                    </div>
+                    <div>
+                        <label for="num-modes">Num Modes</label>
+                        <input type="number" id="num-modes" value="9" min="1" class="num-input">
+                    </div>
+                    <div>
+                        <label for="max-rounds">Max Rounds</label>
+                        <input type="number" id="max-rounds" value="3" min="1" class="num-input">
+                    </div>
+                    <div>
+                        <label for="top-n">Top N Select</label>
+                        <input type="number" id="top-n" value="5" min="1" class="num-input">
+                    </div>
+                    <div>
+                        <label for="delta-threshold">Delta Threshold</label>
+                        <input type="number" id="delta-threshold" value="0.5" step="0.1" class="num-input">
+                    </div>
+                    <div>
+                        <label for="max-residues">Max Residues</label>
+                        <input type="number" id="max-residues" value="5" min="1" class="num-input">
+                    </div>
+                    <div>
+                        <label for="poor-binding">Poor Binding (kcal/mol)</label>
+                        <input type="number" id="poor-binding" value="-4.0" step="0.5" class="num-input">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 6: Vina Executable -->
+        <div class="card step">
+            <div class="step-badge">6</div>
+            <h2>Vina Executable</h2>
+            <div class="inline-group">
+                <input type="text" id="vina-path" placeholder="Path to vina executable" class="text-input flex-grow">
+                <button type="button" id="detect-vina-btn" class="btn btn-secondary">Auto-Detect</button>
+            </div>
+        </div>
+
+        <!-- Step 7: Output Directory -->
+        <div class="card step">
+            <div class="step-badge">7</div>
+            <h2>Output Directory</h2>
+            <input type="text" id="output-dir" value="./output" class="text-input">
+        </div>
+
+        <!-- Step 8: Additional SMILES -->
+        <div class="card step">
+            <div class="step-badge">8</div>
+            <h2>Additional SMILES <span class="optional">(optional)</span></h2>
+            <textarea id="user-smiles" rows="4" placeholder="One SMILES string per line" class="text-input textarea"></textarea>
+        </div>
+
+        <!-- Start Button -->
+        <div class="start-section">
+            <button id="start-btn" class="btn btn-start">Start Pipeline</button>
+        </div>
+    </div>
+
+    <!-- ==================== RUNNING VIEW ==================== -->
+    <div id="running-view" style="display:none">
+        <div class="card">
+            <h2>Pipeline Running</h2>
+            <div id="stage-indicator" class="stage-indicator">
+                <span class="stage" data-stage="prep">Preparation</span>
+                <span class="stage-arrow">&#8594;</span>
+                <span class="stage" data-stage="initial">Initial Dock</span>
+                <span class="stage-arrow">&#8594;</span>
+                <span class="stage" data-stage="sidechain">Sidechain</span>
+                <span class="stage-arrow">&#8594;</span>
+                <span class="stage" data-stage="backbone">Backbone</span>
+                <span class="stage-arrow">&#8594;</span>
+                <span class="stage" data-stage="minimize">Minimize</span>
+            </div>
+        </div>
+        <div class="card">
+            <h2>Log Output</h2>
+            <div id="log-viewer" class="log-viewer"></div>
+        </div>
+    </div>
+
+    <!-- ==================== CHECKPOINT MODAL ==================== -->
+    <div id="checkpoint-modal" class="modal-overlay" style="display:none">
+        <div class="modal-card">
+            <h2>Checkpoint: <span id="checkpoint-stage"></span></h2>
+            <p>Review the current candidates and choose an action.</p>
+            <div class="table-wrapper">
+                <table id="checkpoint-table">
+                    <thead>
+                        <tr>
+                            <th>Rank</th>
+                            <th>Name</th>
+                            <th>Score (kcal/mol)</th>
+                            <th>Origin</th>
+                            <th>SMILES</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+            <div class="checkpoint-actions">
+                <button id="cp-continue" class="btn btn-primary">Continue to Next Stage</button>
+                <button id="cp-rerun" class="btn btn-secondary">Rerun This Stage</button>
+                <button id="cp-inject-toggle" class="btn btn-secondary">Inject SMILES</button>
+            </div>
+            <div id="cp-inject-area" style="display:none">
+                <textarea id="cp-inject-smiles" rows="3" placeholder="One SMILES per line" class="text-input textarea"></textarea>
+                <button id="cp-inject-submit" class="btn btn-primary" style="margin-top:8px">Submit &amp; Continue</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== RESULTS VIEW ==================== -->
+    <div id="results-view" style="display:none">
+        <div class="card">
+            <h2>Results</h2>
+            <div id="results-summary" class="results-summary"></div>
+            <div class="table-wrapper">
+                <table id="results-table">
+                    <thead>
+                        <tr>
+                            <th data-col="rank" class="sortable">Rank</th>
+                            <th data-col="name" class="sortable">Name</th>
+                            <th data-col="docking_score" class="sortable">Score (kcal/mol)</th>
+                            <th data-col="origin" class="sortable">Origin</th>
+                            <th data-col="smiles" class="sortable">SMILES</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+            <div class="results-actions">
+                <a id="download-csv" href="/api/download_csv" class="btn btn-primary">Download CSV</a>
+                <a id="download-complex" href="/api/download_complex" class="btn btn-primary">Download Complex PDB</a>
+                <button id="new-run-btn" class="btn btn-secondary">New Run</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== ERROR VIEW ==================== -->
+    <div id="error-view" style="display:none">
+        <div class="card error-card">
+            <h2>Pipeline Error</h2>
+            <p id="error-message"></p>
+            <pre id="error-traceback" class="log-viewer"></pre>
+            <button id="error-new-run" class="btn btn-secondary" style="margin-top:16px">New Run</button>
+        </div>
+    </div>
+
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

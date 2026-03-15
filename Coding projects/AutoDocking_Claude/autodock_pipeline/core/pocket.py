@@ -82,40 +82,40 @@ def find_pocket_center(pdb_path: Path,
     matched_coords = []
     matched_residues = set()
 
-    with open(pdb_path, "r") as f:
-        for line in f:
-            record = line[:6].strip()
-            if record not in ("ATOM", "HETATM"):
+    raw_bytes_pdb = pdb_path.read_bytes()
+    for line in raw_bytes_pdb.decode("utf-8", errors="replace").splitlines():
+        record = line[:6].strip()
+        if record not in ("ATOM", "HETATM"):
+            continue
+
+        atom_name = line[12:16].strip()
+
+        # Use CA atoms for center calculation; fall back to any atom if no CA
+        # We collect CA first, then fill in with all-atom if needed
+        chain_id = line[21].strip() if len(line) > 21 else ""
+        res_name = line[17:20].strip().upper()
+        try:
+            res_num = int(line[22:26].strip())
+        except ValueError:
+            continue
+
+        for t_chain, t_resname, t_resnum in targets:
+            if t_resnum != res_num:
+                continue
+            if t_chain is not None and t_chain != chain_id:
+                continue
+            if t_resname is not None and t_resname != res_name:
                 continue
 
-            atom_name = line[12:16].strip()
-
-            # Use CA atoms for center calculation; fall back to any atom if no CA
-            # We collect CA first, then fill in with all-atom if needed
-            chain_id = line[21].strip() if len(line) > 21 else ""
-            res_name = line[17:20].strip().upper()
-            try:
-                res_num = int(line[22:26].strip())
-            except ValueError:
-                continue
-
-            for t_chain, t_resname, t_resnum in targets:
-                if t_resnum != res_num:
-                    continue
-                if t_chain is not None and t_chain != chain_id:
-                    continue
-                if t_resname is not None and t_resname != res_name:
-                    continue
-
-                # Match found
-                if atom_name == "CA":
-                    x = float(line[30:38])
-                    y = float(line[38:46])
-                    z = float(line[46:54])
-                    matched_coords.append((x, y, z))
-                    key = (chain_id, res_name, res_num)
-                    matched_residues.add(key)
-                break
+            # Match found
+            if atom_name == "CA":
+                x = float(line[30:38])
+                y = float(line[38:46])
+                z = float(line[46:54])
+                matched_coords.append((x, y, z))
+                key = (chain_id, res_name, res_num)
+                matched_residues.add(key)
+            break
 
     if not matched_coords:
         raise ValueError(

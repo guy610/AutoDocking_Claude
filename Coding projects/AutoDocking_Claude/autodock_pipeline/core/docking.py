@@ -119,18 +119,18 @@ def _parse_energies_from_log(log_path: Path) -> List[float]:
     """
     energies = []
     in_table = False
-    with open(log_path, "r") as f:
-        for line in f:
-            if "-----+------" in line:
-                in_table = True
-                continue
-            if in_table:
-                parts = line.split()
-                if len(parts) >= 4:
-                    try:
-                        energies.append(float(parts[1]))
-                    except (ValueError, IndexError):
-                        break
-                else:
+    raw = log_path.read_bytes().decode("utf-8", errors="replace")
+    for line in raw.splitlines():
+        if "-----+------" in line:
+            in_table = True
+            continue
+        if in_table:
+            parts = line.split()
+            if len(parts) >= 4:
+                try:
+                    energies.append(float(parts[1]))
+                except (ValueError, IndexError):
                     break
+            else:
+                break
     return energies

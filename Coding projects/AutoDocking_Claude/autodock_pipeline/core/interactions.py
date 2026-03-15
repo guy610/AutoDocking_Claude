@@ -69,30 +69,30 @@ class InteractionMetrics:
 def parse_atoms_from_pdb(pdb_path: Path) -> List[AtomRecord]:
     """Parse ATOM/HETATM records from a PDB file."""
     atoms = []
-    with open(pdb_path, "r") as f:
-        for line in f:
-            record = line[:6].strip()
-            if record not in ("ATOM", "HETATM"):
-                continue
-            try:
-                serial = int(line[6:11].strip())
-                name = line[12:16].strip()
-                res_name = line[17:20].strip()
-                chain = line[21].strip() if len(line) > 21 else ""
-                res_num = int(line[22:26].strip())
-                x = float(line[30:38])
-                y = float(line[38:46])
-                z = float(line[46:54])
-                element = line[76:78].strip() if len(line) >= 78 else ""
-                if not element:
-                    element = _infer_element(name)
-                atoms.append(AtomRecord(
-                    serial=serial, name=name, res_name=res_name,
-                    chain=chain, res_num=res_num, x=x, y=y, z=z,
-                    element=element,
-                ))
-            except (ValueError, IndexError):
-                continue
+    raw_bytes_pdb = pdb_path.read_bytes()
+    for line in raw_bytes_pdb.decode("utf-8", errors="replace").splitlines():
+        record = line[:6].strip()
+        if record not in ("ATOM", "HETATM"):
+            continue
+        try:
+            serial = int(line[6:11].strip())
+            name = line[12:16].strip()
+            res_name = line[17:20].strip()
+            chain = line[21].strip() if len(line) > 21 else ""
+            res_num = int(line[22:26].strip())
+            x = float(line[30:38])
+            y = float(line[38:46])
+            z = float(line[46:54])
+            element = line[76:78].strip() if len(line) >= 78 else ""
+            if not element:
+                element = _infer_element(name)
+            atoms.append(AtomRecord(
+                serial=serial, name=name, res_name=res_name,
+                chain=chain, res_num=res_num, x=x, y=y, z=z,
+                element=element,
+            ))
+        except (ValueError, IndexError):
+            continue
     return atoms
 
 

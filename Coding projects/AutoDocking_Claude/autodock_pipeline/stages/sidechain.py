@@ -14,8 +14,9 @@ Strategy:
 
 import logging
 import random
+import time
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from rdkit import Chem
 
@@ -293,7 +294,7 @@ def identify_peptide_residues(smiles: str,
 
 
 def _generate_hybrid_variants(smiles: str, residues: List[str],
-                              allowed: List[str], config: PipelineConfig) -> List[str]:
+                              allowed: List[str], config: PipelineConfig) -> List[Tuple[str, str]]:
     """Generate sidechain variants for peptides containing unnatural residues.
 
     Instead of rebuilding the whole peptide from residue list (which fails
@@ -303,7 +304,7 @@ def _generate_hybrid_variants(smiles: str, residues: List[str],
     Falls back to MolFromSequence-based rebuilding for the natural-AA-only
     subsequence if direct replacement fails.
     """
-    variants = set()
+    variants = {}
     mol = Chem.MolFromSmiles(smiles)
     if mol is None:
         return []
@@ -382,7 +383,7 @@ def _generate_hybrid_variants(smiles: str, residues: List[str],
             # Try build_peptide_smiles - it will fail if any UNK present
             new_smi = build_peptide_smiles(mutant)
             if new_smi and new_smi != smiles:
-                variants.add(new_smi)
+                variants[new_smi] = "Pos{}: {}->{}".format(pos_idx + 1, current_aa, new_aa)
 
     # If build_peptide_smiles failed due to UNK, try RDKit MolFromSequence
     # for the natural-only positions as a rough approximation
@@ -398,20 +399,20 @@ def _generate_hybrid_variants(smiles: str, residues: List[str],
                     mutant[pos_idx] = new_aa
                     new_smi = build_peptide_smiles(mutant)
                     if new_smi and new_smi != smiles:
-                        variants.add(new_smi)
+                        variants[new_smi] = "Pos{}: {}->{}".format(pos_idx + 1, natural_only[pos_idx], new_aa)
             if variants:
                 logger.info("Generated %d variants from natural-AA-only subset (%d of %d residues)",
                            len(variants), len(natural_only), len(residues))
 
-    return list(variants)
+    return [(smi, ann) for smi, ann in variants.items()]
 
 
 def generate_sidechain_variants(smiles: str,
-                                config: PipelineConfig) -> List[str]:
+                                config: PipelineConfig) -> List[Tuple[str, str]]:
     """Generate candidate SMILES with mutated side chains.
 
     For each position in the peptide, tries substituting each allowed
-    amino acid. Returns a list of unique, valid SMILES strings.
+    amino acid. Returns a list of unique, valid (SMILES, annotation) tuples.
     Positions with unnatural amino acids (UNK) are preserved unchanged.
     """
     residues = identify_peptide_residues(
@@ -436,7 +437,7 @@ def generate_sidechain_variants(smiles: str,
         variant_list = _generate_hybrid_variants(smiles, residues, allowed, config)
     else:
         # Standard approach: build from residue list
-        variants = set()
+        variants = {}
         for pos in range(n_positions):
             for new_aa in allowed:
                 if new_aa == residues[pos]:
@@ -445,8 +446,8 @@ def generate_sidechain_variants(smiles: str,
                 mutant[pos] = new_aa
                 new_smi = build_peptide_smiles(mutant)
                 if new_smi and new_smi != smiles:
-                    variants.add(new_smi)
-        variant_list = list(variants)
+                    variants[new_smi] = "Pos{}: {}->{}".format(pos + 1, residues[pos], new_aa)
+        variant_list = [(smi, ann) for smi, ann in variants.items()]
 
     # If too many, sample randomly
     max_cand = config.optimization.max_candidates_per_round
@@ -459,18 +460,22 @@ def generate_sidechain_variants(smiles: str,
     return variant_list
 
 
+def _format_time(seconds):
+    """Format seconds into a human-readable string."""
+    if seconds < 60:
+        return "{:.0f} sec".format(seconds)
+    elif seconds < 3600:
+        return "{:.1f} min".format(seconds / 60)
+    else:
+        return "{:.1f} hr".format(seconds / 3600)
+
+
 def run_sidechain_optimization(config: PipelineConfig,
                                receptor_pdbqt,
                                initial_results: List[DockingResult],
-                               original_score: float) -> List[DockingResult]:
-    """Execute the iterative side-chain optimization loop.
-
-    For each round:
-      1. Generate sidechain variants from the current best candidates.
-      2. Validate and dock each variant.
-      3. Keep top N candidates that improve over the original.
-      4. Stop if no improvement or max rounds reached.
-    """
+                               original_score: float,
+                               time_per_dock: float = 0.0) -> List[DockingResult]:
+    """Execute the iterative side-chain optimization loop."""
     out_dir = ensure_dir(config.output_dir / "sidechain")
     all_results = []
     current_seeds = list(initial_results)
@@ -481,22 +486,48 @@ def run_sidechain_optimization(config: PipelineConfig,
                      round_num, config.optimization.max_rounds)
         round_dir = ensure_dir(out_dir / "round_{:02d}".format(round_num))
 
-        # Generate variants from all current seeds
-        candidates = []
+        # Generate annotated variants from all current seeds
+        candidates_with_ann = []
+        seen_smiles = set()
         for seed in current_seeds:
             variants = generate_sidechain_variants(seed.smiles, config)
-            candidates.extend(variants)
+            for smi, ann in variants:
+                if smi not in seen_smiles:
+                    seen_smiles.add(smi)
+                    candidates_with_ann.append((smi, ann))
 
-        # Deduplicate
-        candidates = list(set(candidates))
-        if not candidates:
+        if not candidates_with_ann:
             logger.info("No new sidechain variants generated, stopping")
             break
 
-        logger.info("Docking %d sidechain candidates", len(candidates))
-        round_results = []
+        # Log residue identification for first round
+        if round_num == 1:
+            seed_residues = identify_peptide_residues(
+                current_seeds[0].smiles,
+                known_sequence=getattr(config, "ligand_sequence", ""))
+            if seed_residues:
+                res_str = ", ".join(seed_residues)
+                unk_positions = [str(i + 1) for i, r in enumerate(seed_residues) if r == "UNK"]
+                logger.info("Peptide residues: [%s]", res_str)
+                if unk_positions:
+                    logger.info("UNK (unnatural) at positions %s - preserved, not mutated",
+                                ", ".join(unk_positions))
 
-        for i, smi in enumerate(candidates):
+        # Time estimation
+        rounds_remaining = config.optimization.max_rounds - round_num
+        if time_per_dock > 0:
+            est_this_round = len(candidates_with_ann) * time_per_dock
+            est_future = rounds_remaining * len(candidates_with_ann) * time_per_dock
+            logger.info("Estimated time: this round ~%s, remaining ~%s (%d docks x %.1f sec/dock)",
+                        _format_time(est_this_round),
+                        _format_time(est_this_round + est_future),
+                        len(candidates_with_ann), time_per_dock)
+
+        logger.info("Docking %d sidechain candidates", len(candidates_with_ann))
+        round_results = []
+        round_start = time.time()
+
+        for i, (smi, annotation) in enumerate(candidates_with_ann):
             name = "sc_r{:02d}_{:03d}".format(round_num, i + 1)
 
             # Validate
@@ -507,6 +538,7 @@ def run_sidechain_optimization(config: PipelineConfig,
                 continue
 
             try:
+                dock_start = time.time()
                 lig_pdbqt = smiles_to_pdbqt(smi, name=name, output_dir=round_dir)
                 result = run_vina(
                     receptor_pdbqt=receptor_pdbqt,
@@ -518,15 +550,25 @@ def run_sidechain_optimization(config: PipelineConfig,
                     vina_executable=config.vina_executable,
                     origin="sidechain",
                 )
+                dock_elapsed = time.time() - dock_start
+                # Update running average
+                if time_per_dock <= 0:
+                    time_per_dock = dock_elapsed
+                else:
+                    time_per_dock = 0.7 * time_per_dock + 0.3 * dock_elapsed
                 round_results.append(result)
                 all_results.append(result)
-                logger.info("  %s: %.2f kcal/mol", name, result.best_energy)
+                logger.info("  %s [%s]: %.2f kcal/mol (%.1fs)",
+                            name, annotation, result.best_energy, dock_elapsed)
             except Exception as e:
-                logger.error("Failed to dock %s: %s", name, e)
+                logger.error("Failed to dock %s [%s]: %s", name, annotation, e)
 
+        round_elapsed = time.time() - round_start
         if not round_results:
             logger.info("No successful docking results this round, stopping")
             break
+
+        logger.info("Round %d completed in %s", round_num, _format_time(round_elapsed))
 
         # Select top candidates
         combined = current_seeds + round_results

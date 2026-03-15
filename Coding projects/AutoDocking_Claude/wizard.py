@@ -23,7 +23,7 @@ DIM = "\033[2m"
 
 
 # Path to optional background/banner image (JPG/PNG)
-BANNER_IMAGE = Path(__file__).parent / "stephen_docking_banner.jpg"
+BANNER_IMAGE = Path(__file__).parent / "Banner" / "StevenDocking_5.png"
 
 
 def _show_banner_image():

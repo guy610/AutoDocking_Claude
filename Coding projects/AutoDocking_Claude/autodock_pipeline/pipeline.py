@@ -3,6 +3,7 @@ Main pipeline orchestrator.
 """
 
 import logging
+import time
 from pathlib import Path
 from typing import List, Optional
 
@@ -16,7 +17,7 @@ from .core.validators import (
     validate_ligand, check_binding_quality,
     print_validation_alerts, print_binding_alerts,
 )
-from .utils.io_utils import ensure_dir
+from .utils.io_utils import ensure_dir, generate_complex_pdb
 from .utils.reporting import results_to_records, generate_csv_report, generate_markdown_report
 
 logger = logging.getLogger(__name__)
@@ -31,6 +32,8 @@ class DockingPipeline:
         self.original_result: Optional[DockingResult] = None
         self.receptor_pdbqt: Optional[Path] = None
         self.receptor_clean_pdb: Optional[Path] = None
+        self.checkpoint_handler = None  # Set for web mode
+        self.time_per_dock = 0.0  # Seconds per dock, measured from initial dock
 
     def prepare_receptor(self) -> Path:
         logger.info("Preparing receptor from: %s", self.config.receptor_pdb)
@@ -54,6 +57,7 @@ class DockingPipeline:
         out_dir = ensure_dir(self.config.output_dir / "initial")
         smiles_to_3d(adjusted_smiles, name=self.config.ligand_name, output_dir=out_dir)
         lig_pdbqt = smiles_to_pdbqt(adjusted_smiles, name=self.config.ligand_name, output_dir=out_dir)
+        dock_start = time.time()
         result = run_vina(
             receptor_pdbqt=self.receptor_pdbqt,
             ligand_pdbqt=lig_pdbqt,
@@ -64,16 +68,22 @@ class DockingPipeline:
             vina_executable=self.config.vina_executable,
             origin="initial",
         )
+        self.time_per_dock = time.time() - dock_start
+        logger.info("Initial dock completed in %.1f sec", self.time_per_dock)
         self.all_results.append(result)
         return result
 
     def _run_stage_with_checkpoint(self, stage_name, stage_func, seed_results):
         stage_key = stage_name.lower().replace(" ", "_").replace("-", "_")
         out_dir = ensure_dir(self.config.output_dir / stage_key)
-        results = stage_func(self.config, self.receptor_pdbqt, seed_results, self.original_score)
+        results = stage_func(self.config, self.receptor_pdbqt, seed_results, self.original_score, time_per_dock=self.time_per_dock)
         self.all_results.extend(results)
         top = sorted(seed_results + results, key=lambda r: r.best_energy)[:self.config.optimization.top_n_select]
-        action, top, branch = interactive_checkpoint(top, stage_name, self.config, self.receptor_pdbqt, out_dir)
+        if self.checkpoint_handler:
+            action, top, branch = self.checkpoint_handler.interactive_checkpoint(
+                top, stage_name, self.config, self.receptor_pdbqt, out_dir)
+        else:
+            action, top, branch = interactive_checkpoint(top, stage_name, self.config, self.receptor_pdbqt, out_dir)
         if action == "rerun":
             return self._run_stage_with_checkpoint(stage_name, stage_func, seed_results)
         self.all_results.extend([r for r in top if r not in self.all_results])
@@ -127,6 +137,19 @@ class DockingPipeline:
         generate_markdown_report(records, original_rec, md_path,
                                  top_n=self.config.optimization.top_n_select)
         logger.info("Reports written: %s, %s", csv_path, md_path)
+
+        # Generate complex PDB with best candidate docked to receptor
+        if self.all_results and self.receptor_clean_pdb:
+            best = sorted(self.all_results, key=lambda r: r.best_energy)[0]
+            if best.best_pose_pdb and best.best_pose_pdb.exists():
+                complex_path = self.config.output_dir / "best_complex.pdb"
+                generate_complex_pdb(
+                    self.receptor_clean_pdb, best.best_pose_pdb,
+                    complex_path, ligand_name=best.ligand_name,
+                )
+                logger.info("Complex PDB (receptor + best ligand): %s", complex_path)
+                logger.info("Best candidate: %s (%.2f kcal/mol)",
+                            best.ligand_name, best.best_energy)
 
     def run(self):
         logger.info("Starting Stephen Docking v0.2.0")

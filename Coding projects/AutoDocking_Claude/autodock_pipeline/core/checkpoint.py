@@ -23,7 +23,7 @@ def display_candidates(results: List[DockingResult], stage_name: str,
                        output_dir: Path) -> None:
     """Print a formatted table of the current top candidates."""
     print(f"\n{'='*72}")
-    print(f"  CHECKPOINT — End of {stage_name}")
+    print(f"  CHECKPOINT -- End of {stage_name}")
     print(f"{'='*72}")
     print(f"  Top {len(results)} candidates:")
     print(f"  {'#':<4} {'Name':<20} {'Score':>10} {'Origin':<16} SMILES")

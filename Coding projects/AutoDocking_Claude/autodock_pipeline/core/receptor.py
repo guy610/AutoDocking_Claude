@@ -27,8 +27,9 @@ def clean_pdb(config: PipelineConfig) -> Path:
     removed = 0
     lines_out = []
 
-    with open(input_pdb, "r") as f:
-        for line in f:
+    raw_bytes = input_pdb.read_bytes()
+    for line in raw_bytes.decode("utf-8", errors="replace").splitlines(True):
+        if True:
             record = line[:6].strip()
 
             if record in ("ATOM", "HETATM"):
@@ -72,8 +73,9 @@ def prepare_receptor_pdbqt(cleaned_pdb: Path, config: PipelineConfig) -> Path:
     pdbqt_path = out_dir / f"{cleaned_pdb.stem}.pdbqt"
 
     lines_out = []
-    with open(cleaned_pdb, "r") as f:
-        for line in f:
+    raw_bytes2 = cleaned_pdb.read_bytes()
+    for line in raw_bytes2.decode("utf-8", errors="replace").splitlines(True):
+        if True:
             record = line[:6].strip()
             if record in ("ATOM", "HETATM"):
                 # Extract element from columns 77-78 or infer from atom name

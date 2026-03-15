@@ -13,8 +13,9 @@ These changes can improve metabolic stability while preserving binding.
 """
 
 import logging
+import time
 from pathlib import Path
-from typing import List
+from typing import List, Tuple
 
 from rdkit import Chem
 
@@ -60,7 +61,7 @@ def identify_backbone_candidates(metrics: InteractionMetrics,
 
 def generate_backbone_variants(smiles: str,
                                candidate_positions: List[int],
-                               config: PipelineConfig) -> List[str]:
+                               config: PipelineConfig) -> List[Tuple[str, str]]:
     """Generate backbone-modified candidate SMILES.
 
     For each candidate position, generate:
@@ -69,7 +70,7 @@ def generate_backbone_variants(smiles: str,
       3. Beta-2 amino acid variant (insert CH2 between CA and C(=O))
       4. Beta-3 amino acid variant (insert CH2 between N and CA)
     """
-    variants = set()
+    variants = {}
     mol = Chem.MolFromSmiles(smiles)
     if mol is None:
         return []
@@ -92,7 +93,7 @@ def generate_backbone_variants(smiles: str,
                         # Validate
                         check = Chem.MolFromSmiles(new_smi)
                         if check is not None:
-                            variants.add(new_smi)
+                            variants[new_smi] = "Pos{}: N-methylation".format(pos + 1)
                             logger.debug("N-methylation at position %d: %s", pos, new_smi)
                 except Exception as e:
                     logger.debug("N-methylation failed at position %d: %s", pos, e)
@@ -118,7 +119,7 @@ def generate_backbone_variants(smiles: str,
                 if new_smi and new_smi != smiles:
                     check = Chem.MolFromSmiles(new_smi)
                     if check is not None:
-                        variants.add(new_smi)
+                        variants[new_smi] = "Pos{}: D-amino acid".format(pos + 1)
                         logger.debug("D-AA at position %d: %s", pos, new_smi)
             except Exception as e:
                 logger.debug("D-AA substitution failed at position %d: %s", pos, e)
@@ -145,7 +146,7 @@ def generate_backbone_variants(smiles: str,
                     if new_smi:
                         check = Chem.MolFromSmiles(new_smi)
                         if check is not None:
-                            variants.add(new_smi)
+                            variants[new_smi] = "Pos{}: beta-2 AA".format(pos + 1)
                             logger.debug("Beta-2 AA at position %d: %s", pos, new_smi)
                 except Exception as e:
                     logger.debug("Beta-2 insertion failed at position %d: %s", pos, e)
@@ -171,26 +172,30 @@ def generate_backbone_variants(smiles: str,
                     if new_smi:
                         check = Chem.MolFromSmiles(new_smi)
                         if check is not None:
-                            variants.add(new_smi)
+                            variants[new_smi] = "Pos{}: beta-3 AA".format(pos + 1)
                             logger.debug("Beta-3 AA at position %d: %s", pos, new_smi)
                 except Exception as e:
                     logger.debug("Beta-3 insertion failed at position %d: %s", pos, e)
 
-    return list(variants)
+    return [(smi, ann) for smi, ann in variants.items()]
+
+
+def _format_time(seconds):
+    """Format seconds into a human-readable string."""
+    if seconds < 60:
+        return "{:.0f} sec".format(seconds)
+    elif seconds < 3600:
+        return "{:.1f} min".format(seconds / 60)
+    else:
+        return "{:.1f} hr".format(seconds / 3600)
 
 
 def run_backbone_optimization(config: PipelineConfig,
                               receptor_pdbqt,
                               initial_results: List[DockingResult],
-                              original_score: float) -> List[DockingResult]:
-    """Execute the iterative backbone optimization loop.
-
-    For each round:
-      1. Compute interaction metrics for current best poses.
-      2. Identify backbone modification candidates.
-      3. Generate variants, dock, and select top candidates.
-      4. Stop if no improvement or max rounds reached.
-    """
+                              original_score: float,
+                              time_per_dock: float = 0.0) -> List[DockingResult]:
+    """Execute the iterative backbone optimization loop."""
     out_dir = ensure_dir(config.output_dir / "backbone")
     all_results = []
     current_seeds = list(initial_results)
@@ -209,7 +214,6 @@ def run_backbone_optimization(config: PipelineConfig,
         else:
             logger.warning("Cannot compute interactions, using all positions")
             metrics = InteractionMetrics()
-            # Create dummy per_residue with all positions eligible
             amide_pat = Chem.MolFromSmarts("[C](=O)[NH]")
             mol = Chem.MolFromSmiles(seed.smiles)
             if mol and amide_pat:
@@ -226,21 +230,38 @@ def run_backbone_optimization(config: PipelineConfig,
             logger.info("No backbone modification candidates found, stopping")
             break
 
-        # Generate variants from all seeds
-        all_variants = []
+        logger.info("Backbone candidate positions: %s",
+                     ", ".join(["Pos{}(bb_int={})".format(p + 1, metrics.per_residue_position.get(p, {}).get("n_bb_interactions", "?")) for p in candidates_pos]))
+
+        # Generate annotated variants from all seeds
+        all_variants_with_ann = []
+        seen_smiles = set()
         for s in current_seeds:
             variants = generate_backbone_variants(s.smiles, candidates_pos, config)
-            all_variants.extend(variants)
+            for smi, ann in variants:
+                if smi not in seen_smiles:
+                    seen_smiles.add(smi)
+                    all_variants_with_ann.append((smi, ann))
 
-        all_variants = list(set(all_variants))
-        if not all_variants:
+        if not all_variants_with_ann:
             logger.info("No backbone variants generated, stopping")
             break
 
-        logger.info("Docking %d backbone candidates", len(all_variants))
-        round_results = []
+        # Time estimation
+        rounds_remaining = config.optimization.max_rounds - round_num
+        if time_per_dock > 0:
+            est_this_round = len(all_variants_with_ann) * time_per_dock
+            est_future = rounds_remaining * len(all_variants_with_ann) * time_per_dock
+            logger.info("Estimated time: this round ~%s, remaining ~%s (%d docks x %.1f sec/dock)",
+                        _format_time(est_this_round),
+                        _format_time(est_this_round + est_future),
+                        len(all_variants_with_ann), time_per_dock)
 
-        for i, smi in enumerate(all_variants):
+        logger.info("Docking %d backbone candidates", len(all_variants_with_ann))
+        round_results = []
+        round_start = time.time()
+
+        for i, (smi, annotation) in enumerate(all_variants_with_ann):
             name = "bb_r{:02d}_{:03d}".format(round_num, i + 1)
             val = validate_ligand(smi, name=name,
                                   max_residues=config.optimization.max_residues)
@@ -248,6 +269,7 @@ def run_backbone_optimization(config: PipelineConfig,
             if not val.is_valid:
                 continue
             try:
+                dock_start = time.time()
                 lig_pdbqt = smiles_to_pdbqt(smi, name=name, output_dir=round_dir)
                 result = run_vina(
                     receptor_pdbqt=receptor_pdbqt,
@@ -259,15 +281,24 @@ def run_backbone_optimization(config: PipelineConfig,
                     vina_executable=config.vina_executable,
                     origin="backbone",
                 )
+                dock_elapsed = time.time() - dock_start
+                if time_per_dock <= 0:
+                    time_per_dock = dock_elapsed
+                else:
+                    time_per_dock = 0.7 * time_per_dock + 0.3 * dock_elapsed
                 round_results.append(result)
                 all_results.append(result)
-                logger.info("  %s: %.2f kcal/mol", name, result.best_energy)
+                logger.info("  %s [%s]: %.2f kcal/mol (%.1fs)",
+                            name, annotation, result.best_energy, dock_elapsed)
             except Exception as e:
-                logger.error("Failed to dock %s: %s", name, e)
+                logger.error("Failed to dock %s [%s]: %s", name, annotation, e)
 
+        round_elapsed = time.time() - round_start
         if not round_results:
             logger.info("No successful backbone docking results, stopping")
             break
+
+        logger.info("Round %d completed in %s", round_num, _format_time(round_elapsed))
 
         combined = current_seeds + round_results
         combined.sort(key=lambda r: r.best_energy)
