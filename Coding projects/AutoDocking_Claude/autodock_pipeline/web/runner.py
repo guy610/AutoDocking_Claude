@@ -209,6 +209,14 @@ class PipelineRunner:
         if pr:
             pocket_residues = [s.strip() for s in pr.split(",") if s.strip()]
 
+        # Pocket Triage (auto_consensus) parameters
+        box_mode = d.get("box_mode", "default")
+        if box_mode == "pocket" and not pocket_residues:
+            box_mode = "default"  # fall back if no residues provided
+        min_pocket_volume = float(d.get("min_pocket_volume", 300.0))
+        p2rank_executable = d.get("p2rank_executable", "")
+        fpocket_executable = d.get("fpocket_executable", "")
+
         user_smiles = []
         us = d.get("user_smiles", "")
         if us:
@@ -244,6 +252,10 @@ class PipelineRunner:
             gnina_executable=d.get("gnina_executable", ""),
             rxdock_executable=d.get("rxdock_executable", ""),
             hierarchical_top_n=int(d.get("hierarchical_top_n", 20)),
+            p2rank_executable=p2rank_executable,
+            fpocket_executable=fpocket_executable,
+            min_pocket_volume=min_pocket_volume,
+            box_mode=box_mode,
             remove_waters=d.get("remove_waters", True),
             remove_heteroatoms=d.get("remove_heteroatoms", True),
             run_mode=mode,

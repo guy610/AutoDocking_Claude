@@ -93,8 +93,10 @@ def prepare_rxdock_cavity(
 
     # Derive rbcavity path from rbdock path
     # Handle WSL prefix: if rbdock is "wsl rbdock", rbcavity is "wsl rbcavity"
+    # Also handle wrapper variants: "wsl rbdock-wrapper" -> "wsl rbcavity-wrapper"
     if rxdock_executable.lower().startswith("wsl "):
-        rbcavity = "wsl rbcavity"
+        wsl_cmd = rxdock_executable[4:].strip()
+        rbcavity = "wsl " + wsl_cmd.replace("rbdock", "rbcavity")
     else:
         rxdock_dir = Path(rxdock_executable).parent
         rbcavity = str(rxdock_dir / "rbcavity")

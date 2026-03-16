@@ -242,7 +242,117 @@ scores for consensus ranking. It is optional even in Hierarchical mode.
   Consensus ranking will use only Vina and GNINA scores.
 
 
-6. EXTRACT STEPHEN DOCKING
+6. INSTALL P2RANK (Optional - for Auto Pocket Triage)
+-------------------------------------------------------
+
+P2Rank is a machine-learning tool that predicts protein-ligand binding sites
+from protein structure alone. It is used in the "Auto Pocket Triage" docking
+box mode to automatically locate candidate pockets.
+
+  *** IMPORTANT: P2Rank is a Java application and runs on Linux. ***
+  On Windows it requires WSL2 (see Step 4 above).
+
+  STEP A: Install Java inside WSL
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  Open the Ubuntu terminal and run:
+
+      sudo apt-get update
+      sudo apt-get install -y openjdk-17-jre
+
+  Verify Java is installed:
+
+      java -version
+
+  You should see "openjdk version 17.x.x" or similar.
+
+  STEP B: Download and install P2Rank
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      cd /opt
+      sudo wget https://github.com/rdk/p2rank/releases/download/2.5.1/p2rank_2.5.1.tar.gz
+      sudo tar -xzf p2rank_2.5.1.tar.gz
+      sudo rm p2rank_2.5.1.tar.gz
+
+  Verify it works:
+
+      /opt/p2rank_2.5.1/prank predict -h
+
+  STEP C: Tell Stephen Docking to use P2Rank via WSL
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  In the web UI (Step 3, Auto Pocket Triage mode), set the P2Rank path to:
+
+      wsl /opt/p2rank_2.5.1/prank
+
+
+7. INSTALL FPOCKET (Optional - for Auto Pocket Triage)
+-------------------------------------------------------
+
+Fpocket is a geometry-based pocket detection tool that measures cavity volumes
+using Voronoi tessellation. It is used alongside P2Rank in "Auto Pocket Triage"
+mode to validate that predicted pockets have sufficient volume for peptide binding.
+
+  *** IMPORTANT: Fpocket has NO native Windows binary. ***
+  It requires WSL2 (see Step 4 above).
+
+  STEP A: Build Fpocket from source inside WSL
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  The conda-forge fpocket package has known issues with PDB parsing.
+  Build from source instead (requires git and build-essential):
+
+      sudo apt-get update
+      sudo apt-get install -y git build-essential libnetcdf-dev
+      cd /tmp
+      git clone https://github.com/Discngine/fpocket.git
+      cd fpocket
+      make
+      sudo make install
+
+  Verify it works:
+
+      fpocket -h
+
+  Create a wrapper script so it can be called cleanly from Windows:
+
+      sudo bash -c 'cat > /usr/local/bin/fpocket-wrapper << SCRIPT
+#!/bin/bash
+exec /usr/local/bin/fpocket "\$@"
+SCRIPT'
+      sudo chmod +x /usr/local/bin/fpocket-wrapper
+
+  Verify the wrapper works:
+
+      fpocket-wrapper -h
+
+  STEP B: Tell Stephen Docking to use Fpocket via WSL
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  In the web UI (Step 3, Auto Pocket Triage mode), set the Fpocket path to:
+
+      wsl fpocket-wrapper
+
+  AUTO POCKET TRIAGE - HOW IT WORKS
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  When you select "Auto Pocket Triage (P2Rank + Fpocket)" in Step 3:
+
+    1. P2Rank runs ML-based prediction to locate the top 3 binding pockets.
+    2. Fpocket runs geometry-based detection to measure cavity volumes.
+    3. The pipeline cross-references the two tools by Euclidean distance,
+       then selects the highest-ranking P2Rank pocket whose matched Fpocket
+       volume exceeds your "Min Pocket Volume" threshold.
+
+  The "Min Pocket Volume" parameter controls which pockets are large enough
+  for your peptide. Reference guide:
+
+    Small amino acid (Gly, Ala):              ~60 - 90 Angstroms^3
+    Bulky amino acid (Trp, Arg):              ~170 - 230 Angstroms^3
+    Unnatural bulky sidechains:               ~250+ Angstroms^3
+    Recommended minimum for tetrapeptide anchor: ~300 - 500 Angstroms^3
+
+  Default: 300 Angstroms^3 (suitable for tetrapeptide anchor residues).
+
+  If neither P2Rank nor Fpocket is installed, the "Auto Pocket Triage" mode
+  will not produce results. Use Pocket Residues or Manual Coordinates instead.
+
+
+8. EXTRACT STEPHEN DOCKING
 ---------------------------
 
   a) Locate the file: StephenDocking_v0.7.0.zip
@@ -667,7 +777,8 @@ StephenDocking_v0.7.0/
 |   |-- pipeline.py              Main pipeline orchestration logic
 |   |-- core/                    Core computational modules
 |   |   |-- receptor.py          Protein receptor preparation
-|   |   |-- pocket.py            Binding pocket detection
+|   |   |-- pocket.py            Binding pocket detection (residue-based)
+|   |   |-- pocket_triage.py     Auto Pocket Triage (P2Rank + Fpocket)
 |   |   |-- docking.py           AutoDock Vina docking interface
 |   |   |-- interactions.py      Protein-ligand interaction analysis
 |   |   |-- checkpoint.py        Pipeline checkpoint/resume system
@@ -697,6 +808,7 @@ StephenDocking_v0.7.0/
 |   |-- best_complex.pdb         Best docked complex structure
 |   |-- qc_complexes/            QC complex PDBs (per modification category)
 |   |-- rxdock/                  RxDock output files (hierarchical mode only)
+|   |-- pocket_triage/           P2Rank & Fpocket output (auto_consensus mode)
 |   |-- receptor/                Prepared receptor files
 |   |-- initial/                 Initial docking results
 |   |-- sidechain/               Sidechain optimization rounds

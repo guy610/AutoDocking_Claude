@@ -82,6 +82,10 @@
                     <input type="radio" name="box_mode" value="default">
                     Default (full box at origin)
                 </label>
+                <label class="radio-label">
+                    <input type="radio" name="box_mode" value="auto_consensus">
+                    Auto Pocket Triage (P2Rank + Fpocket)
+                </label>
             </div>
             <div id="pocket-input">
                 <label for="pocket-residues">Pocket Residues (comma-separated)</label>
@@ -113,6 +117,29 @@
                         <label>Size Z</label>
                         <input type="number" id="size-z" value="20" step="1" class="num-input">
                     </div>
+                </div>
+            </div>
+            <div id="auto-consensus-input" style="display:none">
+                <p class="small" style="margin-bottom:0.75rem;color:#888;">
+                    Automatically discovers and validates binding pockets using P2Rank
+                    (ML-based prediction) and Fpocket (geometry-based volume measurement).
+                    Best for "anchor and lip" peptide strategies where you need a deep
+                    pocket for a bulky sidechain plus adjacent surface area.
+                </p>
+                <div class="form-row">
+                    <label for="min-pocket-volume">Min Pocket Volume (&#x212B;&#xB3;)</label>
+                    <input type="number" id="min-pocket-volume" value="300" step="10" min="50" class="num-input">
+                    <p class="small" style="margin-top:0.25rem;color:#999;font-size:0.8rem;">
+                        Reference: Gly/Ala ~60-90 | Trp/Arg ~170-230 | Unnatural ~250+ | Tetrapeptide anchor ~300-500
+                    </p>
+                </div>
+                <div class="form-row" style="margin-top:0.5rem;">
+                    <label for="p2rank-path">P2Rank Executable</label>
+                    <input type="text" id="p2rank-path" placeholder="e.g. wsl /opt/p2rank/prank" class="text-input">
+                </div>
+                <div class="form-row" style="margin-top:0.5rem;">
+                    <label for="fpocket-path">Fpocket Executable</label>
+                    <input type="text" id="fpocket-path" placeholder="e.g. wsl fpocket" class="text-input">
                 </div>
             </div>
         </div>

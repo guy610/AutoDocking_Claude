@@ -205,6 +205,11 @@
                     r.value === "pocket" ? "block" : "none";
                 $("#manual-input").style.display =
                     r.value === "manual" ? "block" : "none";
+                var acInput = $("#auto-consensus-input");
+                if (acInput) {
+                    acInput.style.display =
+                        r.value === "auto_consensus" ? "block" : "none";
+                }
             });
         });
 
@@ -401,6 +406,7 @@
             data.ligand_sequence = "";
         }
 
+        data.box_mode = boxMode;
         if (boxMode === "pocket") {
             data.pocket_residues = $("#pocket-residues").value;
         } else if (boxMode === "manual") {
@@ -410,6 +416,10 @@
             data.size_x = $("#size-x").value;
             data.size_y = $("#size-y").value;
             data.size_z = $("#size-z").value;
+        } else if (boxMode === "auto_consensus") {
+            data.min_pocket_volume = $("#min-pocket-volume").value;
+            data.p2rank_executable = $("#p2rank-path").value;
+            data.fpocket_executable = $("#fpocket-path").value;
         }
 
         // Collect selected AAs

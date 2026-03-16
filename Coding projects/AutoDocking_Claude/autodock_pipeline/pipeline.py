@@ -601,8 +601,36 @@ class DockingPipeline:
         logger.info("Receptor: %s", self.config.receptor_pdb)
         logger.info("Ligand SMILES: %s", self.config.ligand_smiles)
         self.receptor_pdbqt = self.prepare_receptor()
-        # Auto-calculate docking box from pocket residues if specified
-        if self.config.pocket_residues:
+        # Auto-calculate docking box
+        if self.config.box_mode == "auto_consensus":
+            from .core.pocket_triage import run_pocket_triage
+            triage_dir = self.config.output_dir / "pocket_triage"
+            triage_dir.mkdir(parents=True, exist_ok=True)
+            triage_result = run_pocket_triage(
+                receptor_pdb=self.config.receptor_pdb,
+                p2rank_executable=self.config.p2rank_executable,
+                fpocket_executable=self.config.fpocket_executable,
+                output_dir=triage_dir,
+                min_pocket_volume=self.config.min_pocket_volume,
+            )
+            if triage_result is None:
+                raise ValueError(
+                    "Auto Pocket Triage failed: no pocket passed the volume threshold "
+                    "({:.0f} A^3). Try lowering min_pocket_volume or using manual/pocket residue mode.".format(
+                        self.config.min_pocket_volume
+                    )
+                )
+            self.config.docking.center_x = triage_result.center[0]
+            self.config.docking.center_y = triage_result.center[1]
+            self.config.docking.center_z = triage_result.center[2]
+            self.config.docking.size_x = triage_result.size[0]
+            self.config.docking.size_y = triage_result.size[1]
+            self.config.docking.size_z = triage_result.size[2]
+            logger.info("Pocket Triage selected: %s", triage_result.pocket_label)
+            logger.info("Docking box set from Pocket Triage: center=(%.1f, %.1f, %.1f), size=(%.1f, %.1f, %.1f)",
+                        triage_result.center[0], triage_result.center[1], triage_result.center[2],
+                        triage_result.size[0], triage_result.size[1], triage_result.size[2])
+        elif self.config.pocket_residues:
             center, size = find_pocket_center(
                 self.config.receptor_pdb, self.config.pocket_residues
             )

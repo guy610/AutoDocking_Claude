@@ -98,12 +98,20 @@ class PipelineConfig:
     rxdock_executable: str = ""      # path to rbdock binary; empty = skip phase 3
     hierarchical_top_n: int = 20     # candidates to carry into phases 2-4
 
+    # Pocket Triage (auto_consensus box mode)
+    p2rank_executable: str = ""      # path to P2Rank prank binary; e.g. "wsl /opt/p2rank/prank"
+    fpocket_executable: str = ""     # path to fpocket binary; e.g. "wsl fpocket"
+    min_pocket_volume: float = 300.0  # minimum Fpocket cavity volume (Angstroms^3) to pass triage
+
     # Receptor preparation
     remove_waters: bool = True
     remove_heteroatoms: bool = True
 
     # Run mode
     run_mode: str = "full"  # "single_dock", "sidechain", "backbone", "minimize", "full", "hierarchical"
+
+    # Docking box mode: "pocket", "manual", "default", "auto_consensus"
+    box_mode: str = "default"
 
     # Stages to run (for granular control)
     stages: List[str] = field(default_factory=lambda: [
