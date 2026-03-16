@@ -1,5 +1,5 @@
 ================================================================================
-                    STEPHEN DOCKING v0.4.0 - INSTALLATION & USAGE GUIDE
+                    STEPHEN DOCKING v0.6.0 - INSTALLATION & USAGE GUIDE
               Automated Peptide Optimization Pipeline with AutoDock Vina
 ================================================================================
 
@@ -19,6 +19,8 @@ How it works:
       * All 20 natural amino acids at each position
       * Unnatural amino acids (UAAs) you define via SMILES
       * Backbone modifications (beta-amino acids, N-methyl variants)
+      * N-terminal modifications (methylation, acylation, custom SMILES)
+      * C-terminal cap scanning (acid vs amide forms)
       * Residue deletions to find minimal binding motifs
   - Results are ranked by predicted binding energy (kcal/mol).
 
@@ -137,14 +139,14 @@ AutoDock Vina is the docking engine that does the actual binding calculations.
 4. EXTRACT STEPHEN DOCKING
 ---------------------------
 
-  a) Locate the file: StephenDocking_v0.4.0.zip
+  a) Locate the file: StephenDocking_v0.6.0.zip
   b) Right-click the zip file and select "Extract All..."
-  c) Choose a location (e.g., C:\Users\YourName\Desktop\StephenDocking_v0.4.0)
+  c) Choose a location (e.g., C:\Users\YourName\Desktop\StephenDocking_v0.6.0)
   d) Click "Extract."
 
   After extraction, the folder should contain:
 
-     StephenDocking_v0.4.0/
+     StephenDocking_v0.6.0/
        web_app.py              - Main application file
        wizard.py               - Pipeline wizard (alternative CLI interface)
        autodock_pipeline/       - Core pipeline code
@@ -166,10 +168,10 @@ HOW TO RUN
 
   3) Navigate to the StephenDocking folder:
 
-         cd C:\path\to\StephenDocking_v0.4.0
+         cd C:\path\to\StephenDocking_v0.6.0
 
      For example:
-         cd C:\Users\YourName\Desktop\StephenDocking_v0.4.0
+         cd C:\Users\YourName\Desktop\StephenDocking_v0.6.0
 
   4) Start the application:
 
@@ -352,6 +354,40 @@ Fine-tune the docking parameters. Default values work well for most cases.
     Peptides scoring worse (less negative) than this value are flagged
     as poor binders and may be dropped from further optimization.
 
+  Scan C-terminal caps (checkbox, default: off)
+    When enabled, the best candidate each round is docked in both the
+    deprotonated acid form (COO-) and the amide form (CONH2) at pH 7.3.
+    Adds up to 2 extra docks per round per stage.
+
+  N-terminal methylation (checkbox, default: off)
+    Replaces all N-H bonds on the N-terminal nitrogen with N-CH3.
+    For standard amino acids (primary amine): NH2 -> N(CH3)2 (two methyls).
+    For proline (secondary amine): NH -> N-CH3 (one methyl).
+    Does NOT modify lysine, arginine, or UAA sidechain amines.
+    Adds 1 extra dock per round for the best candidate.
+
+  N-terminal acylation (checkbox, default: off)
+    Caps the N-terminal nitrogen with an acyl group, forming an amide bond.
+    A number input lets you set the carbon chain length:
+      2 = acetyl (CH3-CO-)
+      3 = propionyl
+      16 = palmitoyl (CH3-(CH2)14-CO-)
+    Useful for assessing skin permeability of lipidated peptide hits.
+    Adds 1 extra dock per round for the best candidate.
+
+  Custom N-terminal modification (checkbox, default: off)
+    Paste any SMILES fragment with [*] marking the bond to the N-terminal
+    nitrogen. The [*] atom will be replaced by a direct bond to the N-term.
+    Examples:
+      [*]C(=O)C           Acetyl group
+      [*]C(=O)CCCCC       Hexanoyl group
+      [*]C(=O)c1ccccc1    Benzoyl group
+    Adds 1 extra dock per round for the best candidate.
+
+  All N-terminal toggles can be active simultaneously (up to 3 extra docks
+  per round). They only modify the N-terminal nitrogen and will correctly
+  handle proline at the N-terminus.
+
 - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 STEP 7: VINA EXECUTABLE
@@ -366,7 +402,7 @@ Tell the app where to find the AutoDock Vina program.
   Manual Path:
     If auto-detect does not find it, browse to or type the full path to
     the vina .exe file. Example:
-        C:\Users\YourName\Desktop\StephenDocking_v0.4.0\vina_1.2.5_win_x86_64.exe
+        C:\Users\YourName\Desktop\StephenDocking_v0.6.0\vina_1.2.5_win_x86_64.exe
 
 - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -421,6 +457,17 @@ Results Table:
   You can:
     - Download the full results as a CSV file for further analysis
     - Download the best complex PDB to visualize in PyMOL or similar
+    - Download QC (Quality Control) complex PDBs for specific modification
+      categories. These appear only when the corresponding toggle was active:
+        * Best D-amino acid complex
+        * Best beta-amino acid complex
+        * Best unnatural amino acid complex
+        * Best C-terminal amide complex
+        * Best N-terminal methylated complex
+        * Best N-terminal acylated complex
+        * Best N-terminal custom modification complex
+      Open these in PyMOL or ChimeraX to visually verify that modifications
+      are docking in the binding site correctly.
 
 
 INTERPRETING RESULTS
@@ -491,7 +538,7 @@ Solution: Make sure your PDB file uses standard ASCII characters. Re-download
 FILE STRUCTURE
 ==============
 
-StephenDocking_v0.4.0/
+StephenDocking_v0.6.0/
 |
 |-- web_app.py                   Main Flask web application
 |-- wizard.py                    CLI wizard (alternative to web UI)
@@ -507,6 +554,8 @@ StephenDocking_v0.4.0/
 |   |   |-- docking.py           AutoDock Vina docking interface
 |   |   |-- interactions.py      Protein-ligand interaction analysis
 |   |   |-- checkpoint.py        Pipeline checkpoint/resume system
+|   |   |-- ligand.py            Ligand preparation, N/C-terminal chemistry
+|   |   |-- validators.py        Ligand and binding quality validation
 |   |-- stages/                  Optimization stage implementations
 |   |   |-- sidechain.py         Stage 1: Sidechain optimization
 |   |   |-- backbone.py          Stage 2: Backbone modification
@@ -524,17 +573,35 @@ StephenDocking_v0.4.0/
 |-- Banner/                      Application banner and logo images
 |
 |-- output/                      Default output directory (created on run)
-|   |-- results.csv              Final ranked results
+|   |-- results_summary.csv      Final ranked results with annotations
 |   |-- best_complex.pdb         Best docked complex structure
-|   |-- stage1_results/          Sidechain optimization intermediates
-|   |-- stage2_results/          Backbone modification intermediates
-|   |-- stage3_results/          Minimize stage intermediates
+|   |-- qc_complexes/            QC complex PDBs (per modification category)
+|   |-- receptor/                Prepared receptor files
+|   |-- initial/                 Initial docking results
+|   |-- sidechain/               Sidechain optimization rounds
+|   |-- backbone/                Backbone modification rounds
+|   |-- minimize/                Residue deletion results
 
 
 VERSION HISTORY
 ===============
 
-v0.4.0 (Current Release)
+v0.6.0 (Current Release)
+  - N-terminal modifications: methylation, acylation (variable chain), custom SMILES
+  - C-terminal cap scanning: acid (COO-) vs amide (CONH2) toggle
+  - QC complex PDBs for 7 modification categories (D-amino, beta-amino,
+    UAA, C-term amide, N-term methyl, N-term acyl, N-term custom)
+  - RDKit-based N-terminus identification that safely excludes lysine,
+    arginine, and UAA sidechain amines; works on proline
+  - Annotation tracking throughout pipeline for modification descriptions
+
+v0.5.0
+  - Quality control complex PDB generation (D-amino, beta-amino, UAA)
+  - Forced backbone modification: at least one position always tested
+  - Forced UAA candidate survival into next round's seeds
+  - Annotation field added to results CSV
+
+v0.4.0
   - Amino acid selection grid with group toggle buttons
   - Custom unnatural amino acid (UAA) support via SMILES input
   - Stereo annotation (R/S) for all modified positions
