@@ -1,4 +1,4 @@
-/* Stephen Docking - Web UI JavaScript v0.4.0 */
+/* Stephen Docking - Web UI JavaScript v0.7.0 */
 
 (function () {
     "use strict";
@@ -91,7 +91,7 @@
             .catch(function() {});
     }
 
-    // ==================== Auto-detect Vina ====================
+    // ==================== Auto-detect Executables ====================
     function detectVina() {
         fetch("/api/detect_vina")
             .then(function(r) { return r.json(); })
@@ -103,7 +103,31 @@
             .catch(function() {});
     }
 
+    function detectGnina() {
+        fetch("/api/detect_gnina")
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (data.found && $("#gnina-path")) {
+                    $("#gnina-path").value = data.found;
+                }
+            })
+            .catch(function() {});
+    }
+
+    function detectRxDock() {
+        fetch("/api/detect_rxdock")
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (data.found && $("#rxdock-path")) {
+                    $("#rxdock-path").value = data.found;
+                }
+            })
+            .catch(function() {});
+    }
+
     $("#detect-vina-btn").addEventListener("click", detectVina);
+    if ($("#detect-gnina-btn")) $("#detect-gnina-btn").addEventListener("click", detectGnina);
+    if ($("#detect-rxdock-btn")) $("#detect-rxdock-btn").addEventListener("click", detectRxDock);
 
     // ==================== File Upload / Drop Zone ====================
     function setupDropZone() {
@@ -181,6 +205,29 @@
                     r.value === "pocket" ? "block" : "none";
                 $("#manual-input").style.display =
                     r.value === "manual" ? "block" : "none";
+            });
+        });
+
+        // Run mode: show/hide hierarchical options
+        $$('input[name="run_mode"]').forEach(function (r) {
+            r.addEventListener("change", function () {
+                var hierOpts = $("#hierarchical-options");
+                if (hierOpts) {
+                    hierOpts.style.display = r.value === "hierarchical" ? "block" : "none";
+                    // Auto-detect GNINA/RxDock when hierarchical mode is first selected
+                    if (r.value === "hierarchical") {
+                        if ($("#gnina-path") && !$("#gnina-path").value) detectGnina();
+                        if ($("#rxdock-path") && !$("#rxdock-path").value) detectRxDock();
+                        // Show hierarchical stage indicators
+                        $$(".hierarchical-stage").forEach(function(el) {
+                            el.style.display = "inline";
+                        });
+                    } else {
+                        $$(".hierarchical-stage").forEach(function(el) {
+                            el.style.display = "none";
+                        });
+                    }
+                }
             });
         });
 
@@ -340,6 +387,8 @@
             nterm_acyl_carbons: $("#nterm-acyl-carbons").value,
             nterm_custom_smiles: $("#nterm-custom-smiles") ? $("#nterm-custom-smiles").value : "",
             vina_executable: $("#vina-path").value,
+            gnina_executable: $("#gnina-path") ? $("#gnina-path").value : "",
+            rxdock_executable: $("#rxdock-path") ? $("#rxdock-path").value : "",
             output_dir: $("#output-dir").value || "./output",
             user_smiles: $("#user-smiles").value,
         };
@@ -463,6 +512,19 @@
         if (cb) cb.style.display = "none";
         // Check for QC complexes
         checkQCStatus();
+        // Check for consensus CSV (hierarchical mode)
+        checkConsensusCSV();
+    }
+
+    function checkConsensusCSV() {
+        fetch("/api/download_consensus_csv", { method: "HEAD" })
+            .then(function(r) {
+                if (r.ok) {
+                    var btn = $("#download-consensus-csv");
+                    if (btn) btn.style.display = "inline-block";
+                }
+            })
+            .catch(function() {});
     }
 
     function checkQCStatus() {
@@ -584,6 +646,14 @@
             setActiveStage("prep");
         } else if (msg.indexOf("initial dock") >= 0 || msg.indexOf("running initial") >= 0) {
             setActiveStage("initial");
+        } else if (msg.indexOf("phase 2") >= 0 || msg.indexOf("gnina") >= 0) {
+            // Show hierarchical stages if not already visible
+            $$(".hierarchical-stage").forEach(function(el) { el.style.display = "inline"; });
+            setActiveStage("gnina");
+        } else if (msg.indexOf("phase 3") >= 0 || msg.indexOf("rxdock") >= 0) {
+            setActiveStage("rxdock");
+        } else if (msg.indexOf("phase 4") >= 0 || msg.indexOf("consensus") >= 0) {
+            setActiveStage("consensus");
         } else if (msg.indexOf("sidechain") >= 0) {
             setActiveStage("sidechain");
         } else if (msg.indexOf("backbone") >= 0) {

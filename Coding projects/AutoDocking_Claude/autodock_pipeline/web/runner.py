@@ -199,6 +199,8 @@ class PipelineRunner:
             stages = ["backbone"]
         elif mode == "minimize":
             stages = ["minimize"]
+        elif mode == "hierarchical":
+            stages = ["sidechain", "backbone", "minimize"]
         else:
             stages = ["sidechain", "backbone", "minimize"]
 
@@ -239,6 +241,9 @@ class PipelineRunner:
             optimization=optimization,
             output_dir=Path(d.get("output_dir", "output")),
             vina_executable=d.get("vina_executable", "vina"),
+            gnina_executable=d.get("gnina_executable", ""),
+            rxdock_executable=d.get("rxdock_executable", ""),
+            hierarchical_top_n=int(d.get("hierarchical_top_n", 20)),
             remove_waters=d.get("remove_waters", True),
             remove_heteroatoms=d.get("remove_heteroatoms", True),
             run_mode=mode,

@@ -18,7 +18,10 @@ from .core.validators import (
     print_validation_alerts, print_binding_alerts,
 )
 from .utils.io_utils import ensure_dir, generate_complex_pdb
-from .utils.reporting import results_to_records, generate_csv_report, generate_markdown_report
+from .utils.reporting import (
+    results_to_records, generate_csv_report, generate_markdown_report,
+    ConsensusRecord, generate_consensus_csv,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -257,6 +260,292 @@ class DockingPipeline:
         else:
             logger.info("No QC complexes generated (no backbone/UAA modifications found)")
 
+    def _select_top_candidates(self, n: int = 20) -> List[DockingResult]:
+        """Select top N candidates from the final stage for hierarchical screening.
+
+        Sorts by Vina score and force-includes the best candidate from each
+        active modification category (D-amino, beta-amino, UAA, C-term amide,
+        N-term methylated, N-term acylated, N-term custom).
+
+        Returns deduplicated list of up to n candidates.
+        """
+        if not self.all_results:
+            return []
+
+        # Sort all results by Vina score (best first)
+        sorted_results = sorted(self.all_results, key=lambda r: r.best_energy)
+
+        # Collect custom UAA names for identification
+        custom_uaa_names = set()
+        for name in getattr(self.config.optimization, 'sc_custom_sidechains', {}):
+            custom_uaa_names.add(name.upper())
+
+        # First pass: find best from each modification category
+        category_bests = {}  # category -> best DockingResult
+        for r in sorted_results:
+            ann = getattr(r, 'annotation', '').lower()
+            if not ann:
+                continue
+
+            categories_found = []
+            if 'd-amino' in ann:
+                categories_found.append('d_amino')
+            if 'beta-2' in ann or 'beta-3' in ann or 'beta' in ann:
+                categories_found.append('beta')
+            if custom_uaa_names:
+                ann_upper = getattr(r, 'annotation', '').upper()
+                for uaa_name in custom_uaa_names:
+                    if uaa_name in ann_upper:
+                        categories_found.append('uaa')
+                        break
+
+            if self.config.optimization.scan_cterm_caps and 'c-term amide' in ann:
+                categories_found.append('cterm_amide')
+            if self.config.optimization.nterm_dimethyl and ('n-term methylation' in ann or 'n-term dimethyl' in ann):
+                categories_found.append('nterm_methyl')
+            if self.config.optimization.nterm_acyl and (
+                'n-term acetyl' in ann or 'n-term propionyl' in ann or
+                'n-term palmitoyl' in ann or ('n-term c' in ann and '-acyl' in ann)
+            ):
+                categories_found.append('nterm_acyl')
+            if self.config.optimization.nterm_custom_smiles and 'n-term custom' in ann:
+                categories_found.append('nterm_custom')
+
+            for cat in categories_found:
+                if cat not in category_bests:
+                    category_bests[cat] = r  # already sorted, first hit is best
+
+        # Start with forced candidates (guaranteed slots)
+        forced_names = set()
+        top = []
+        top_names = set()
+        for cat, result in category_bests.items():
+            if result.ligand_name not in top_names:
+                top.append(result)
+                top_names.add(result.ligand_name)
+                forced_names.add(result.ligand_name)
+                logger.info("Force-included best %s candidate: %s (%.2f kcal/mol)",
+                            cat, result.ligand_name, result.best_energy)
+
+        # Fill remaining slots from top by Vina score
+        remaining_slots = n - len(top)
+        for r in sorted_results:
+            if remaining_slots <= 0:
+                break
+            if r.ligand_name not in top_names:
+                top.append(r)
+                top_names.add(r.ligand_name)
+                remaining_slots -= 1
+
+        # Sort final list by Vina score for consistent ordering
+        top.sort(key=lambda r: r.best_energy)
+
+        logger.info("Selected %d candidates for hierarchical screening (%d forced)",
+                     len(top), len(forced_names))
+        return top
+
+    def run_hierarchical_screening(self, top_candidates: List[DockingResult]):
+        """Run Phases 2-4 of the hierarchical screening pipeline.
+
+        Phase 2: GNINA rescoring of Vina poses (CNN affinity + pose confidence)
+        Phase 3: RxDock de novo docking (orthogonal validation)
+        Phase 4: Consensus ranking across all engines
+        """
+        from .core.gnina import run_gnina_rescore, GninaResult
+        from .core.rxdock import (
+            run_rxdock, prepare_rxdock_cavity, smiles_to_sdf, RxDockResult
+        )
+
+        n_cands = len(top_candidates)
+        gnina_results = {}   # ligand_name -> GninaResult
+        rxdock_results = {}  # ligand_name -> RxDockResult
+
+        # --- Phase 2: GNINA rescoring ---
+        if self.config.gnina_executable:
+            logger.info("=== Phase 2: GNINA CNN Rescoring (%d candidates) ===", n_cands)
+            for i, cand in enumerate(top_candidates):
+                logger.info("Phase 2: GNINA rescoring candidate %d/%d: %s",
+                            i + 1, n_cands, cand.ligand_name)
+                pdbqt_path = Path(cand.output_pdbqt) if cand.output_pdbqt else None
+                if pdbqt_path and pdbqt_path.exists():
+                    gresult = run_gnina_rescore(
+                        receptor_pdbqt=self.receptor_pdbqt,
+                        ligand_docked_pdbqt=pdbqt_path,
+                        gnina_executable=self.config.gnina_executable,
+                        ligand_name=cand.ligand_name,
+                    )
+                    if gresult:
+                        gnina_results[cand.ligand_name] = gresult
+                else:
+                    logger.warning("No docked PDBQT for %s, skipping GNINA", cand.ligand_name)
+            logger.info("Phase 2 complete: %d/%d scored by GNINA",
+                        len(gnina_results), n_cands)
+        else:
+            logger.warning("GNINA executable not set, skipping Phase 2")
+
+        # --- Phase 3: RxDock de novo docking ---
+        if self.config.rxdock_executable:
+            logger.info("=== Phase 3: RxDock Orthogonal Docking (%d candidates) ===", n_cands)
+            rxdock_dir = ensure_dir(self.config.output_dir / "rxdock")
+
+            # Prepare cavity from Vina box coordinates
+            center = (
+                self.config.docking.center_x,
+                self.config.docking.center_y,
+                self.config.docking.center_z,
+            )
+            size = (
+                self.config.docking.size_x,
+                self.config.docking.size_y,
+                self.config.docking.size_z,
+            )
+            prm_path = prepare_rxdock_cavity(
+                receptor_pdb=self.receptor_clean_pdb,
+                center=center,
+                size=size,
+                output_dir=rxdock_dir,
+                rxdock_executable=self.config.rxdock_executable,
+            )
+
+            if prm_path:
+                for i, cand in enumerate(top_candidates):
+                    logger.info("Phase 3: RxDock docking candidate %d/%d: %s",
+                                i + 1, n_cands, cand.ligand_name)
+                    try:
+                        sdf_path = smiles_to_sdf(
+                            cand.smiles, cand.ligand_name, rxdock_dir
+                        )
+                        rresult = run_rxdock(
+                            prm_path=prm_path,
+                            ligand_sdf=sdf_path,
+                            rxdock_executable=self.config.rxdock_executable,
+                            output_dir=rxdock_dir,
+                            ligand_name=cand.ligand_name,
+                        )
+                        if rresult:
+                            rxdock_results[cand.ligand_name] = rresult
+                    except Exception as e:
+                        logger.error("RxDock failed for %s: %s", cand.ligand_name, e)
+                logger.info("Phase 3 complete: %d/%d scored by RxDock",
+                            len(rxdock_results), n_cands)
+            else:
+                logger.error("RxDock cavity preparation failed, skipping Phase 3")
+        else:
+            logger.warning("RxDock executable not set, skipping Phase 3")
+
+        # --- Phase 4: Consensus ranking ---
+        logger.info("=== Phase 4: Consensus Ranking ===")
+        self._build_consensus(top_candidates, gnina_results, rxdock_results)
+
+    def _build_consensus(self, candidates, gnina_results, rxdock_results):
+        """Build consensus ranking from Vina, GNINA, and RxDock results.
+
+        Ranks each candidate by each engine, computes average rank as
+        consensus score. Writes consensus_summary.csv.
+        """
+        from .utils.reporting import get_stereo_annotation
+
+        n = len(candidates)
+
+        # Rank by Vina score (lower = better)
+        vina_sorted = sorted(candidates, key=lambda r: r.best_energy)
+        vina_rank = {r.ligand_name: i + 1 for i, r in enumerate(vina_sorted)}
+
+        # Rank by GNINA CNN affinity (higher = better, so reverse)
+        gnina_rank = {}
+        if gnina_results:
+            gnina_sorted = sorted(
+                gnina_results.keys(),
+                key=lambda name: gnina_results[name].cnn_affinity,
+                reverse=True,
+            )
+            gnina_rank = {name: i + 1 for i, name in enumerate(gnina_sorted)}
+
+        # Rank by RxDock inter score (lower = better)
+        rxdock_rank = {}
+        if rxdock_results:
+            rxdock_sorted = sorted(
+                rxdock_results.keys(),
+                key=lambda name: rxdock_results[name].inter_score,
+            )
+            rxdock_rank = {name: i + 1 for i, name in enumerate(rxdock_sorted)}
+
+        # Build consensus records
+        records = []
+        for cand in candidates:
+            name = cand.ligand_name
+            v_rank = vina_rank.get(name, n)
+
+            g_result = gnina_results.get(name)
+            g_rank = gnina_rank.get(name)
+            g_affinity = g_result.cnn_affinity if g_result else None
+            g_pose = g_result.cnn_pose_score if g_result else None
+
+            r_result = rxdock_results.get(name)
+            r_rank = rxdock_rank.get(name)
+            r_score = r_result.inter_score if r_result else None
+
+            # Consensus = average of available ranks
+            available_ranks = [v_rank]
+            if g_rank is not None:
+                available_ranks.append(g_rank)
+            if r_rank is not None:
+                available_ranks.append(r_rank)
+            consensus = sum(available_ranks) / len(available_ranks)
+
+            # Rank variance = |vina_rank - rxdock_rank| if both available
+            rank_var = None
+            if r_rank is not None:
+                rank_var = abs(v_rank - r_rank)
+
+            # Pose confidence flag
+            pose_flag = ""
+            if g_pose is not None and g_pose < 0.5:
+                pose_flag = "Low Confidence Pose"
+
+            stereo = get_stereo_annotation(cand.smiles) if cand.smiles else ""
+
+            records.append(ConsensusRecord(
+                rank=0,  # will be set after sorting
+                uid=name,
+                smiles=cand.smiles,
+                origin=cand.origin,
+                annotation=getattr(cand, 'annotation', ''),
+                stereo=stereo,
+                vina_score=cand.best_energy,
+                vina_rank=v_rank,
+                rxdock_score=r_score,
+                rxdock_rank=r_rank,
+                gnina_cnn_affinity=g_affinity,
+                gnina_pose_confidence=g_pose,
+                pose_confidence_flag=pose_flag,
+                rank_variance=rank_var,
+                consensus_score=consensus,
+            ))
+
+        # Sort by consensus score and assign final rank
+        records.sort(key=lambda r: r.consensus_score)
+        for i, rec in enumerate(records):
+            rec.rank = i + 1
+
+        # Write consensus CSV
+        consensus_path = self.config.output_dir / "consensus_summary.csv"
+        generate_consensus_csv(records, consensus_path)
+        logger.info("Consensus ranking complete. Results: %s", consensus_path)
+
+        # Log top 5
+        for rec in records[:5]:
+            logger.info(
+                "  #%d %s: consensus=%.1f, vina=%.2f (#%d), gnina=%s (#%s), rxdock=%s (#%s)%s",
+                rec.rank, rec.uid, rec.consensus_score,
+                rec.vina_score, rec.vina_rank,
+                "{:.2f}".format(rec.gnina_cnn_affinity) if rec.gnina_cnn_affinity is not None else "N/A",
+                str(rec.gnina_cnn_affinity is not None and gnina_rank.get(rec.uid, "N/A")) if rec.gnina_cnn_affinity is not None else "N/A",
+                "{:.2f}".format(rec.rxdock_score) if rec.rxdock_score is not None else "N/A",
+                str(rec.rxdock_rank) if rec.rxdock_rank is not None else "N/A",
+                " [{}]".format(rec.pose_confidence_flag) if rec.pose_confidence_flag else "",
+            )
+
     def estimate_total_docks(self) -> int:
         """Estimate total number of docking operations for the full pipeline.
 
@@ -307,7 +596,7 @@ class DockingPipeline:
         return total
 
     def run(self):
-        logger.info("Starting Stephen Docking v0.4.0")
+        logger.info("Starting Stephen Docking v0.7.0")
         logger.info("Run mode: %s", self.config.run_mode)
         logger.info("Receptor: %s", self.config.receptor_pdb)
         logger.info("Ligand SMILES: %s", self.config.ligand_smiles)
@@ -368,5 +657,14 @@ class DockingPipeline:
             current_best = self.run_minimization_stage(current_best)
         if self.config.user_smiles:
             self.dock_user_smiles()
+
+        # Hierarchical screening (Phases 2-4) if enabled
+        if self.config.run_mode == "hierarchical" and self.config.gnina_executable:
+            top = self._select_top_candidates(self.config.hierarchical_top_n)
+            if top:
+                self.run_hierarchical_screening(top)
+            else:
+                logger.warning("No candidates available for hierarchical screening")
+
         self.generate_report()
         logger.info("Pipeline complete. All results in: %s", self.config.output_dir)

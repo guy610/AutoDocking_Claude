@@ -93,12 +93,17 @@ class PipelineConfig:
     output_dir: Path = Path("output")
     vina_executable: str = "vina"  # assumes on PATH; can be full path
 
+    # Hierarchical screening (Phase 2-4 executables)
+    gnina_executable: str = ""       # path to gnina binary; empty = skip phases 2-4
+    rxdock_executable: str = ""      # path to rbdock binary; empty = skip phase 3
+    hierarchical_top_n: int = 20     # candidates to carry into phases 2-4
+
     # Receptor preparation
     remove_waters: bool = True
     remove_heteroatoms: bool = True
 
     # Run mode
-    run_mode: str = "full"  # "single_dock", "sidechain", "backbone", "minimize", "full"
+    run_mode: str = "full"  # "single_dock", "sidechain", "backbone", "minimize", "full", "hierarchical"
 
     # Stages to run (for granular control)
     stages: List[str] = field(default_factory=lambda: [

@@ -104,6 +104,65 @@ class CandidateRecord:
     n_sidechain_interactions: int = 0
 
 
+@dataclass
+class ConsensusRecord:
+    """A single row in the hierarchical consensus report."""
+    rank: int                                    # consensus rank
+    uid: str
+    smiles: str
+    origin: str
+    annotation: str
+    stereo: str
+    vina_score: float
+    vina_rank: int
+    rxdock_score: Optional[float] = None
+    rxdock_rank: Optional[int] = None
+    gnina_cnn_affinity: Optional[float] = None
+    gnina_pose_confidence: Optional[float] = None
+    pose_confidence_flag: str = ""               # "" or "Low Confidence Pose"
+    rank_variance: Optional[int] = None          # |vina_rank - rxdock_rank|
+    consensus_score: float = 0.0                 # average of available ranks
+
+
+def generate_consensus_csv(records: List[ConsensusRecord],
+                           output_path: Path) -> Path:
+    """Write the consensus ranking CSV for hierarchical screening results."""
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    fieldnames = [
+        "rank", "uid", "smiles", "origin", "annotation", "stereo",
+        "vina_score", "vina_rank",
+        "gnina_cnn_affinity", "gnina_pose_confidence", "pose_confidence_flag",
+        "rxdock_score", "rxdock_rank",
+        "rank_variance", "consensus_score",
+    ]
+
+    with open(output_path, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        for rec in records:
+            writer.writerow({
+                "rank": rec.rank,
+                "uid": rec.uid,
+                "smiles": rec.smiles,
+                "origin": rec.origin,
+                "annotation": rec.annotation,
+                "stereo": rec.stereo,
+                "vina_score": round(rec.vina_score, 2),
+                "vina_rank": rec.vina_rank,
+                "gnina_cnn_affinity": round(rec.gnina_cnn_affinity, 2) if rec.gnina_cnn_affinity is not None else "",
+                "gnina_pose_confidence": round(rec.gnina_pose_confidence, 3) if rec.gnina_pose_confidence is not None else "",
+                "pose_confidence_flag": rec.pose_confidence_flag,
+                "rxdock_score": round(rec.rxdock_score, 2) if rec.rxdock_score is not None else "",
+                "rxdock_rank": rec.rxdock_rank if rec.rxdock_rank is not None else "",
+                "rank_variance": rec.rank_variance if rec.rank_variance is not None else "",
+                "consensus_score": round(rec.consensus_score, 2),
+            })
+
+    logger.info("Consensus CSV written: %s (%d candidates)", output_path, len(records))
+    return output_path
+
+
 def results_to_records(results, original_smiles: str = "") -> List[CandidateRecord]:
     """Convert DockingResult list to CandidateRecord list."""
     records = []

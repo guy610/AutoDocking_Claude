@@ -94,6 +94,28 @@ def detect_vina():
     return jsonify({"found": None})
 
 
+@app.route("/api/detect_gnina")
+def detect_gnina():
+    """Auto-detect GNINA executable in the project directory."""
+    project_dir = Path(__file__).parent
+    for pattern in ["gnina*.exe", "gnina*exe*", "gnina"]:
+        hits = list(project_dir.glob(pattern))
+        if hits:
+            return jsonify({"found": str(hits[0])})
+    return jsonify({"found": None})
+
+
+@app.route("/api/detect_rxdock")
+def detect_rxdock():
+    """Auto-detect RxDock (rbdock) executable in the project directory."""
+    project_dir = Path(__file__).parent
+    for pattern in ["rbdock*.exe", "rbdock*exe*", "rbdock"]:
+        hits = list(project_dir.glob(pattern))
+        if hits:
+            return jsonify({"found": str(hits[0])})
+    return jsonify({"found": None})
+
+
 @app.route("/api/start", methods=["POST"])
 def start():
     global runner
@@ -180,6 +202,18 @@ def download_complex():
             return send_from_directory(str(pdb_path.parent), pdb_path.name,
                                        as_attachment=True)
     return jsonify({"error": "No complex PDB available"}), 404
+
+
+@app.route("/api/download_consensus_csv")
+def download_consensus_csv():
+    """Serve the consensus_summary.csv file from hierarchical screening."""
+    if runner and runner.config_data:
+        output_dir = Path(runner.config_data.get("output_dir", "output"))
+        csv_path = output_dir / "consensus_summary.csv"
+        if csv_path.exists():
+            return send_from_directory(str(csv_path.parent), csv_path.name,
+                                       as_attachment=True)
+    return jsonify({"error": "No consensus CSV available (hierarchical screening may not have been run)"}), 404
 
 
 @app.route("/api/download_qc/<qc_type>")

@@ -1,5 +1,5 @@
 ================================================================================
-                    STEPHEN DOCKING v0.6.0 - INSTALLATION & USAGE GUIDE
+                    STEPHEN DOCKING v0.7.0 - INSTALLATION & USAGE GUIDE
               Automated Peptide Optimization Pipeline with AutoDock Vina
 ================================================================================
 
@@ -24,7 +24,8 @@ How it works:
       * Residue deletions to find minimal binding motifs
   - Results are ranked by predicted binding energy (kcal/mol).
 
-The pipeline runs in three stages:
+The pipeline runs in three Vina stages, with an optional 4-phase hierarchical
+screening mode that adds GNINA and RxDock for consensus ranking:
 
   Stage 1 - SIDECHAIN OPTIMIZATION
     Tests all selected natural and unnatural amino acid substitutions at each
@@ -39,6 +40,22 @@ The pipeline runs in three stages:
     Systematically removes residues from the optimized peptide to find the
     shortest sequence that retains strong binding. Shorter peptides are cheaper
     to synthesize and often have better cell permeability.
+
+  HIERARCHICAL MODE (optional, requires GNINA and/or RxDock):
+    After the three Vina stages, the top 20 candidates are carried through:
+
+    Phase 2 - GNINA CNN RESCORING
+      Rescores Vina poses with a convolutional neural network, producing a
+      CNN affinity (predicted pKd) and a pose confidence score (0-1).
+
+    Phase 3 - RxDock ORTHOGONAL DOCKING
+      Docks each candidate de novo using RxDock, an independent docking engine,
+      producing an intermolecular energy score.
+
+    Phase 4 - CONSENSUS RANKING
+      Ranks candidates by each engine independently, then averages the ranks
+      to produce a consensus score. Candidates that rank well across multiple
+      engines are more likely to be true binders.
 
 A Flask-based web interface guides you through every step -- no command line
 knowledge is needed after initial setup.
@@ -136,17 +153,106 @@ AutoDock Vina is the docking engine that does the actual binding calculations.
      You do NOT need to rename the file.
 
 
-4. EXTRACT STEPHEN DOCKING
+4. INSTALL GNINA (Optional - for Hierarchical Mode)
+-----------------------------------------------------
+
+GNINA is a deep-learning docking tool that uses convolutional neural networks
+to evaluate binding poses. It is required for the Hierarchical screening mode.
+
+  *** IMPORTANT: GNINA has NO native Windows binary. ***
+  It is a Linux-only tool. To use GNINA on Windows you must install WSL2
+  (Windows Subsystem for Linux), which gives you a Linux environment inside
+  Windows. This is officially supported by Microsoft and takes about 10 minutes.
+
+  STEP A: Install WSL2 (one-time setup)
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  Open PowerShell as Administrator and run:
+
+      wsl --install
+
+  This installs Ubuntu by default. Restart your computer when prompted.
+  After restart, Ubuntu will open and ask you to create a username and password.
+
+  STEP B: Install GNINA inside WSL
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  Open the Ubuntu terminal (search "Ubuntu" in the Start Menu) and run:
+
+      cd ~
+      wget https://github.com/gnina/gnina/releases/download/v1.3.2/gnina.1.3.2
+      chmod +x gnina.1.3.2
+      sudo mv gnina.1.3.2 /usr/local/bin/gnina
+
+  Verify it works:
+
+      gnina --help
+
+  STEP C: Tell Stephen Docking to use GNINA via WSL
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  In the web UI, set the GNINA executable path to:
+
+      wsl gnina
+
+  The pipeline will automatically call GNINA through WSL. File paths are
+  converted between Windows and Linux formats automatically.
+
+  If GNINA is not installed, Hierarchical mode will gracefully skip Phases 2-4
+  and produce only the standard Vina results.
+
+  Note: For GPU-accelerated GNINA, your Windows NVIDIA driver must be recent.
+  WSL2 shares your GPU automatically -- no separate Linux driver is needed.
+
+
+5. INSTALL RXDOCK (Optional - for Hierarchical Mode)
+-----------------------------------------------------
+
+RxDock is an open-source docking program that provides orthogonal docking
+scores for consensus ranking. It is optional even in Hierarchical mode.
+
+  *** IMPORTANT: RxDock has NO native Windows binary. ***
+  Like GNINA, it requires WSL2. If you already installed WSL2 in Step 4,
+  you can install RxDock in the same Ubuntu environment.
+
+  STEP A: Ensure WSL2 is installed (see Step 4 above)
+
+  STEP B: Install Conda inside WSL (if not already installed)
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  Open the Ubuntu terminal and run:
+
+      wget https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh
+      bash Miniforge3-Linux-x86_64.sh -b
+      ~/miniforge3/bin/conda init
+      source ~/.bashrc
+
+  STEP C: Install RxDock via Conda
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      conda install -c bioconda rxdock -y
+
+  Verify it works:
+
+      rbdock --help
+      rbcavity --help
+
+  STEP D: Tell Stephen Docking to use RxDock via WSL
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  In the web UI, set the RxDock executable path to:
+
+      wsl rbdock
+
+  If RxDock is not installed, Phase 3 (orthogonal docking) will be skipped.
+  Consensus ranking will use only Vina and GNINA scores.
+
+
+6. EXTRACT STEPHEN DOCKING
 ---------------------------
 
-  a) Locate the file: StephenDocking_v0.6.0.zip
+  a) Locate the file: StephenDocking_v0.7.0.zip
   b) Right-click the zip file and select "Extract All..."
-  c) Choose a location (e.g., C:\Users\YourName\Desktop\StephenDocking_v0.6.0)
+  c) Choose a location (e.g., C:\Users\YourName\Desktop\StephenDocking_v0.7.0)
   d) Click "Extract."
 
   After extraction, the folder should contain:
 
-     StephenDocking_v0.6.0/
+     StephenDocking_v0.7.0/
        web_app.py              - Main application file
        wizard.py               - Pipeline wizard (alternative CLI interface)
        autodock_pipeline/       - Core pipeline code
@@ -168,10 +274,10 @@ HOW TO RUN
 
   3) Navigate to the StephenDocking folder:
 
-         cd C:\path\to\StephenDocking_v0.6.0
+         cd C:\path\to\StephenDocking_v0.7.0
 
      For example:
-         cd C:\Users\YourName\Desktop\StephenDocking_v0.6.0
+         cd C:\Users\YourName\Desktop\StephenDocking_v0.7.0
 
   4) Start the application:
 
@@ -280,6 +386,15 @@ Choose how much optimization to perform.
     Runs all three stages: Sidechain, Backbone, and Minimize. This gives
     the most thorough optimization. Takes 30 minutes to several hours
     depending on peptide length and exhaustiveness settings.
+
+  Hierarchical (Vina + GNINA + RxDock):
+    Runs the full Vina pipeline (all 3 stages), then selects the top 20
+    candidates and rescores them with GNINA and RxDock for consensus ranking.
+    This provides orthogonal validation across three different scoring engines,
+    reducing false positives and increasing confidence in the final ranked list.
+    Requires GNINA (mandatory for Phases 2-4) and optionally RxDock (Phase 3).
+    When this mode is selected, fields for GNINA and RxDock executable paths
+    appear below the run mode selector. See "Installing GNINA and RxDock" below.
 
 - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -402,7 +517,7 @@ Tell the app where to find the AutoDock Vina program.
   Manual Path:
     If auto-detect does not find it, browse to or type the full path to
     the vina .exe file. Example:
-        C:\Users\YourName\Desktop\StephenDocking_v0.6.0\vina_1.2.5_win_x86_64.exe
+        C:\Users\YourName\Desktop\StephenDocking_v0.7.0\vina_1.2.5_win_x86_64.exe
 
 - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -456,6 +571,8 @@ Results Table:
 
   You can:
     - Download the full results as a CSV file for further analysis
+    - Download the consensus CSV (hierarchical mode only) with multi-engine
+      rankings, CNN pose confidence, and rank variance between engines
     - Download the best complex PDB to visualize in PyMOL or similar
     - Download QC (Quality Control) complex PDBs for specific modification
       categories. These appear only when the corresponding toggle was active:
@@ -538,7 +655,7 @@ Solution: Make sure your PDB file uses standard ASCII characters. Re-download
 FILE STRUCTURE
 ==============
 
-StephenDocking_v0.6.0/
+StephenDocking_v0.7.0/
 |
 |-- web_app.py                   Main Flask web application
 |-- wizard.py                    CLI wizard (alternative to web UI)
@@ -555,6 +672,8 @@ StephenDocking_v0.6.0/
 |   |   |-- interactions.py      Protein-ligand interaction analysis
 |   |   |-- checkpoint.py        Pipeline checkpoint/resume system
 |   |   |-- ligand.py            Ligand preparation, N/C-terminal chemistry
+|   |   |-- gnina.py             GNINA CNN rescoring interface (Phase 2)
+|   |   |-- rxdock.py            RxDock de novo docking interface (Phase 3)
 |   |   |-- validators.py        Ligand and binding quality validation
 |   |-- stages/                  Optimization stage implementations
 |   |   |-- sidechain.py         Stage 1: Sidechain optimization
@@ -574,8 +693,10 @@ StephenDocking_v0.6.0/
 |
 |-- output/                      Default output directory (created on run)
 |   |-- results_summary.csv      Final ranked results with annotations
+|   |-- consensus_summary.csv    Consensus ranking (hierarchical mode only)
 |   |-- best_complex.pdb         Best docked complex structure
 |   |-- qc_complexes/            QC complex PDBs (per modification category)
+|   |-- rxdock/                  RxDock output files (hierarchical mode only)
 |   |-- receptor/                Prepared receptor files
 |   |-- initial/                 Initial docking results
 |   |-- sidechain/               Sidechain optimization rounds
@@ -586,7 +707,19 @@ StephenDocking_v0.6.0/
 VERSION HISTORY
 ===============
 
-v0.6.0 (Current Release)
+v0.7.0 (Current Release)
+  - 4-Phase Hierarchical Virtual Screening Pipeline:
+    * Phase 1: Vina docking (existing pipeline)
+    * Phase 2: GNINA CNN rescoring (CNN affinity + pose confidence)
+    * Phase 3: RxDock orthogonal docking (independent energy score)
+    * Phase 4: Consensus ranking (average rank across all engines)
+  - New "Hierarchical" run mode in the web UI with auto-detect for
+    GNINA and RxDock executables
+  - Top 20 selection with force-inclusion of best per modification category
+  - Consensus CSV output with rank variance and pose confidence flags
+  - Graceful degradation: skips missing engines with log warnings
+
+v0.6.0
   - N-terminal modifications: methylation, acylation (variable chain), custom SMILES
   - C-terminal cap scanning: acid (COO-) vs amide (CONH2) toggle
   - QC complex PDBs for 7 modification categories (D-amino, beta-amino,
