@@ -180,6 +180,8 @@ class PipelineRunner:
             optimization.sc_allowed_residues = allowed_residues
         if custom_sidechains:
             optimization.sc_custom_sidechains = custom_sidechains
+        if d.get("scan_cterm_caps", False):
+            optimization.scan_cterm_caps = True
         mode = d.get("run_mode", "full")
         if mode == "single_dock":
             stages = []

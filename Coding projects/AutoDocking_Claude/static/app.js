@@ -68,7 +68,28 @@
         buildAAGrid();
         setupAAActions();
         setupUAAButtons();
+        checkSessionReconnect();
     });
+
+    // ==================== Session Reconnect ====================
+    function checkSessionReconnect() {
+        fetch("/api/status")
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (data.state === "running") {
+                    showRunningView();
+                    appendLog("INFO", "Reconnected to running pipeline...");
+                    startSSE();
+                } else if (data.state === "complete") {
+                    currentResults = data.results || [];
+                    renderResults(currentResults);
+                    showRunningView();
+                    appendLog("INFO", "Pipeline completed while disconnected.");
+                    showResultsView();
+                }
+            })
+            .catch(function() {});
+    }
 
     // ==================== Auto-detect Vina ====================
     function detectVina() {
@@ -297,6 +318,7 @@
             delta_threshold: $("#delta-threshold").value,
             max_residues: $("#max-residues").value,
             poor_binding: $("#poor-binding").value,
+            scan_cterm_caps: $("#scan-cterm-caps").checked,
             vina_executable: $("#vina-path").value,
             output_dir: $("#output-dir").value || "./output",
             user_smiles: $("#user-smiles").value,
@@ -419,6 +441,36 @@
         // Hide countdown
         var cb = $("#countdown-bar");
         if (cb) cb.style.display = "none";
+        // Check for QC complexes
+        checkQCStatus();
+    }
+
+    function checkQCStatus() {
+        fetch("/api/qc_status")
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                var anyAvailable = false;
+                if (data.d_amino) {
+                    var el = $("#qc-d-amino");
+                    if (el) el.style.display = "inline-block";
+                    anyAvailable = true;
+                }
+                if (data.beta_amino) {
+                    var el = $("#qc-beta-amino");
+                    if (el) el.style.display = "inline-block";
+                    anyAvailable = true;
+                }
+                if (data.unnatural) {
+                    var el = $("#qc-unnatural");
+                    if (el) el.style.display = "inline-block";
+                    anyAvailable = true;
+                }
+                var section = $("#qc-section");
+                if (section && anyAvailable) {
+                    section.style.display = "block";
+                }
+            })
+            .catch(function() {});
     }
 
     function showErrorView(message, traceback) {

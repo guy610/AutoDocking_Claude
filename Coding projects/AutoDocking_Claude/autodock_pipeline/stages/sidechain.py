@@ -22,7 +22,7 @@ from rdkit import Chem
 
 from ..config import PipelineConfig
 from ..core.docking import DockingResult, run_vina
-from ..core.ligand import smiles_to_pdbqt
+from ..core.ligand import smiles_to_pdbqt, make_cterm_amide, make_cterm_acid_deprot
 from ..core.validators import validate_ligand, print_validation_alerts
 from ..utils.io_utils import ensure_dir, safe_filename
 
@@ -641,6 +641,7 @@ def run_sidechain_optimization(config: PipelineConfig,
                     time_per_dock = dock_elapsed
                 else:
                     time_per_dock = 0.7 * time_per_dock + 0.3 * dock_elapsed
+                result.annotation = annotation
                 round_results.append(result)
                 all_results.append(result)
                 logger.info("  %s [%s]: %.2f kcal/mol (%.1fs)",
@@ -660,6 +661,69 @@ def run_sidechain_optimization(config: PipelineConfig,
         combined.sort(key=lambda r: r.best_energy)
         top_n = config.optimization.top_n_select
         current_seeds = combined[:top_n]
+
+        # Force best UAA candidate into seeds for QC coverage
+        # This ensures at least one unnatural amino acid variant survives
+        # into the next round and appears in the final results.
+        custom_uaa_names = set()
+        for uaa_name in getattr(config.optimization, 'sc_custom_sidechains', {}):
+            custom_uaa_names.add(uaa_name.upper())
+        if custom_uaa_names:
+            # Check if any current seed already has a UAA annotation
+            has_uaa_seed = False
+            for s in current_seeds:
+                ann_upper = getattr(s, 'annotation', '').upper()
+                if any(uaa in ann_upper for uaa in custom_uaa_names):
+                    has_uaa_seed = True
+                    break
+            if not has_uaa_seed:
+                # Find best UAA result from this round
+                best_uaa = None
+                for r in round_results:
+                    ann_upper = getattr(r, 'annotation', '').upper()
+                    if any(uaa in ann_upper for uaa in custom_uaa_names):
+                        if best_uaa is None or r.best_energy < best_uaa.best_energy:
+                            best_uaa = r
+                if best_uaa is not None:
+                    # Replace worst seed with best UAA candidate
+                    current_seeds[-1] = best_uaa
+                    current_seeds.sort(key=lambda r: r.best_energy)
+                    logger.info("Forced best UAA candidate %s (%.2f kcal/mol, %s) "
+                                "into seeds for QC coverage",
+                                best_uaa.ligand_name, best_uaa.best_energy,
+                                getattr(best_uaa, 'annotation', ''))
+
+        # C-terminal cap scanning: dock acid (COO-) and amide (CONH2) of best candidate
+        if getattr(config.optimization, 'scan_cterm_caps', False):
+            best_seed = current_seeds[0]
+            cterm_variants = []
+            acid_smi = make_cterm_acid_deprot(best_seed.smiles)
+            if acid_smi and acid_smi != best_seed.smiles:
+                cterm_variants.append((acid_smi, "C-term acid of {}".format(best_seed.ligand_name)))
+            amide_smi = make_cterm_amide(best_seed.smiles)
+            if amide_smi:
+                cterm_variants.append((amide_smi, "C-term amide of {}".format(best_seed.ligand_name)))
+
+            for ct_smi, ct_ann in cterm_variants:
+                ct_name = "sc_r{:02d}_cterm_{}".format(
+                    round_num, "acid" if "acid" in ct_ann else "amide")
+                try:
+                    ct_pdbqt = smiles_to_pdbqt(ct_smi, name=ct_name, output_dir=round_dir)
+                    ct_result = run_vina(
+                        receptor_pdbqt=receptor_pdbqt,
+                        ligand_pdbqt=ct_pdbqt,
+                        ligand_name=ct_name,
+                        smiles=ct_smi,
+                        docking_params=config.docking,
+                        output_dir=round_dir,
+                        vina_executable=config.vina_executable,
+                        origin="sidechain",
+                    )
+                    ct_result.annotation = ct_ann
+                    all_results.append(ct_result)
+                    logger.info("  %s [%s]: %.2f kcal/mol", ct_name, ct_ann, ct_result.best_energy)
+                except Exception as e:
+                    logger.error("Failed to dock %s [%s]: %s", ct_name, ct_ann, e)
 
         # Check for improvement
         new_best = current_seeds[0].best_energy

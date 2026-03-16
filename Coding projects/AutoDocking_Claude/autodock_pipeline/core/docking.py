@@ -25,6 +25,7 @@ class DockingResult:
     log_path: Optional[Path] = None
     best_pose_pdb: Optional[Path] = None
     origin: str = "initial"     # initial / sidechain / backbone / minimize / user / user-rational / branch
+    annotation: str = ""        # Human-readable modification description (e.g. "Pos1: D-amino acid")
 
 
 def run_vina(receptor_pdbqt: Path,

@@ -203,6 +203,12 @@
                         <input type="number" id="poor-binding" value="-4.0" step="0.5" class="num-input">
                     </div>
                 </div>
+                <div style="margin-top: 1rem;">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="scan-cterm-caps">
+                        <strong>Scan C-terminal caps</strong> &mdash; dock best candidate per round in both acid (COO&#x207B;) and amide (CONH&#x2082;) forms at pH 7.3
+                    </label>
+                </div>
             </div>
         </div>
 
@@ -330,6 +336,26 @@
                 <a id="download-csv" href="/api/download_csv" class="btn btn-primary">Download CSV</a>
                 <a id="download-complex" href="/api/download_complex" class="btn btn-primary">Download Complex PDB</a>
                 <button id="new-run-btn" class="btn btn-secondary">New Run</button>
+            </div>
+
+            <!-- QC Complexes Section -->
+            <div id="qc-section" style="display:none; margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid var(--border);">
+                <h3 style="margin-bottom: 0.75rem;">Quality Control Complexes</h3>
+                <p class="small" style="margin-bottom: 0.75rem; color: var(--text-muted);">
+                    Download receptor-ligand complex PDBs for the best candidate in each modification category.
+                    Open in PyMOL or ChimeraX to visually verify modifications are docking correctly.
+                </p>
+                <div class="results-actions">
+                    <a id="qc-d-amino" href="/api/download_qc/d_amino" class="btn btn-outline" style="display:none;">
+                        &#x2B07; Best D-Amino Acid Complex
+                    </a>
+                    <a id="qc-beta-amino" href="/api/download_qc/beta_amino" class="btn btn-outline" style="display:none;">
+                        &#x2B07; Best Beta-Amino Acid Complex
+                    </a>
+                    <a id="qc-unnatural" href="/api/download_qc/unnatural" class="btn btn-outline" style="display:none;">
+                        &#x2B07; Best Unnatural AA Complex
+                    </a>
+                </div>
             </div>
         </div>
     </div>

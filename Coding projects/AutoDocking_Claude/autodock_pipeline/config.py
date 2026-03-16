@@ -54,6 +54,9 @@ class OptimizationParams:
     min_max_deletions: int = 2
     min_score_tolerance: float = 0.3  # kcal/mol worse than best is still acceptable
 
+    # C-terminal cap scanning
+    scan_cterm_caps: bool = False  # dock best candidate per round in both acid (COO-) and amide (CONH2) forms
+
     # Validation
     max_residues: int = 5            # reject peptides longer than this
     poor_binding_threshold: float = -4.0  # kcal/mol; scores above this trigger alert

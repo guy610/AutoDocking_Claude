@@ -506,6 +506,32 @@ label {
     background: #cbd5e1;
 }
 
+.checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    cursor: pointer;
+    font-size: 0.9rem;
+    color: var(--text);
+}
+
+.checkbox-label input[type="checkbox"] {
+    width: 1.1rem;
+    height: 1.1rem;
+    flex-shrink: 0;
+}
+
+.btn-outline {
+    background: transparent;
+    color: #2563eb;
+    border: 1.5px solid #2563eb;
+}
+
+.btn-outline:hover {
+    background: #2563eb;
+    color: #fff;
+}
+
 .btn-small {
     padding: 5px 12px;
     font-size: 0.8rem;

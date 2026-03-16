@@ -118,6 +118,107 @@ def adjust_protonation(smiles: str, pH: float = 7.3) -> str:
         return smiles
 
 
+def _find_cterm_oxygen(mol):
+    """Find the C-terminal single-bonded oxygen index in a peptide.
+
+    Identifies the C-terminal by finding C(=O)O where the carbonyl carbon
+    is bonded to a backbone alpha carbon (which has a nitrogen neighbor).
+    This distinguishes C-terminal from ASP/GLU sidechain carboxylic acids,
+    where the C(=O)O is bonded to CH2 rather than directly to the alpha-C.
+
+    Returns (carbonyl_c_idx, single_o_idx) or (None, None) if not found.
+    """
+    for atom in mol.GetAtoms():
+        if atom.GetSymbol() != 'C' or atom.GetIsAromatic():
+            continue
+
+        dbl_o_idx = None
+        single_o_idx = None
+        has_alpha_c = False
+
+        for bond in atom.GetBonds():
+            other = bond.GetOtherAtom(atom)
+            if other.GetSymbol() == 'O':
+                if bond.GetBondTypeAsDouble() == 2.0:
+                    dbl_o_idx = other.GetIdx()
+                elif bond.GetBondTypeAsDouble() == 1.0:
+                    single_o_idx = other.GetIdx()
+            elif other.GetSymbol() == 'C':
+                # Check if this neighbor is an alpha carbon (directly bonded to N)
+                for nb in other.GetNeighbors():
+                    if nb.GetSymbol() == 'N' and nb.GetIdx() != atom.GetIdx():
+                        has_alpha_c = True
+                        break
+
+        if dbl_o_idx is not None and single_o_idx is not None and has_alpha_c:
+            return atom.GetIdx(), single_o_idx
+
+    return None, None
+
+
+def make_cterm_amide(smiles: str) -> Optional[str]:
+    """Convert C-terminal carboxylic acid/carboxylate to primary amide (CONH2).
+
+    At pH 7.3, the amide form is neutral (CONH2).
+    Returns the modified SMILES, or None if conversion fails.
+    """
+    mol = Chem.MolFromSmiles(smiles)
+    if mol is None:
+        return None
+
+    _, single_o_idx = _find_cterm_oxygen(mol)
+    if single_o_idx is None:
+        return None
+
+    try:
+        rw = Chem.RWMol(mol)
+        o_atom = rw.GetAtomWithIdx(single_o_idx)
+        o_atom.SetAtomicNum(7)       # O -> N
+        o_atom.SetFormalCharge(0)
+        o_atom.SetNumExplicitHs(2)   # NH2
+        Chem.SanitizeMol(rw)
+        new_smi = Chem.MolToSmiles(rw)
+        if new_smi and Chem.MolFromSmiles(new_smi) is not None:
+            return new_smi
+    except Exception as e:
+        logger.debug("C-term amide conversion failed: %s", e)
+
+    return None
+
+
+def make_cterm_acid_deprot(smiles: str) -> Optional[str]:
+    """Ensure C-terminal carboxylic acid is deprotonated (COO-) for pH 7.3.
+
+    At pH 7.3, C-terminal carboxyl (pKa ~2-3) is fully deprotonated.
+    If already deprotonated, returns canonicalized SMILES unchanged.
+    Returns the modified SMILES, or None if conversion fails.
+    """
+    mol = Chem.MolFromSmiles(smiles)
+    if mol is None:
+        return None
+
+    _, single_o_idx = _find_cterm_oxygen(mol)
+    if single_o_idx is None:
+        return None
+
+    try:
+        rw = Chem.RWMol(mol)
+        o_atom = rw.GetAtomWithIdx(single_o_idx)
+        if o_atom.GetFormalCharge() == 0:
+            # Deprotonate: OH -> O-
+            o_atom.SetFormalCharge(-1)
+            o_atom.SetNoImplicit(True)
+            o_atom.SetNumExplicitHs(0)
+        Chem.SanitizeMol(rw)
+        new_smi = Chem.MolToSmiles(rw)
+        if new_smi and Chem.MolFromSmiles(new_smi) is not None:
+            return new_smi
+    except Exception as e:
+        logger.debug("C-term acid deprotonation failed: %s", e)
+
+    return None
+
+
 def smiles_to_3d(smiles: str, name: str = "ligand",
                  output_dir: Optional[Path] = None,
                  num_conformers: int = 1,

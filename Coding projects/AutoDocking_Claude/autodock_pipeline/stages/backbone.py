@@ -22,7 +22,7 @@ from rdkit import Chem
 from ..config import PipelineConfig
 from ..core.docking import DockingResult, run_vina
 from ..core.interactions import InteractionMetrics, compute_interactions
-from ..core.ligand import smiles_to_pdbqt
+from ..core.ligand import smiles_to_pdbqt, make_cterm_amide, make_cterm_acid_deprot
 from ..core.validators import validate_ligand, print_validation_alerts
 from ..utils.io_utils import ensure_dir, safe_filename
 
@@ -36,6 +36,10 @@ def identify_backbone_candidates(metrics: InteractionMetrics,
     A position is eligible if it has few backbone-mediated interactions
     (below the threshold), suggesting the backbone at that position
     is not critical for binding.
+
+    If no positions pass the threshold, the position with the fewest
+    backbone interactions is forced as a candidate to guarantee at least
+    one backbone modification is always attempted (for QC purposes).
     """
     threshold = config.optimization.bb_min_interaction_threshold
     candidates = []
@@ -47,6 +51,19 @@ def identify_backbone_candidates(metrics: InteractionMetrics,
             logger.debug("Position %d eligible for backbone modification "
                          "(backbone interactions: %d <= %d)",
                          pos_idx, n_bb, threshold)
+
+    # Force at least one position: pick the one with fewest backbone interactions
+    if not candidates and metrics.per_residue_position:
+        all_positions = sorted(
+            metrics.per_residue_position.keys(),
+            key=lambda p: metrics.per_residue_position[p].get("n_bb_interactions", 0)
+        )
+        forced = all_positions[0]
+        n_bb = metrics.per_residue_position[forced].get("n_bb_interactions", 0)
+        candidates.append(forced)
+        logger.info("No positions below threshold (%d); forcing position %d "
+                     "(fewest backbone interactions: %d) for QC coverage",
+                     threshold, forced, n_bb)
 
     # Limit to max positions
     max_pos = config.optimization.bb_max_positions
@@ -286,6 +303,7 @@ def run_backbone_optimization(config: PipelineConfig,
                     time_per_dock = dock_elapsed
                 else:
                     time_per_dock = 0.7 * time_per_dock + 0.3 * dock_elapsed
+                result.annotation = annotation
                 round_results.append(result)
                 all_results.append(result)
                 logger.info("  %s [%s]: %.2f kcal/mol (%.1fs)",
@@ -303,6 +321,38 @@ def run_backbone_optimization(config: PipelineConfig,
         combined = current_seeds + round_results
         combined.sort(key=lambda r: r.best_energy)
         current_seeds = combined[:config.optimization.top_n_select]
+
+        # C-terminal cap scanning: dock acid (COO-) and amide (CONH2) of best candidate
+        if getattr(config.optimization, 'scan_cterm_caps', False):
+            best_seed = current_seeds[0]
+            cterm_variants = []
+            acid_smi = make_cterm_acid_deprot(best_seed.smiles)
+            if acid_smi and acid_smi != best_seed.smiles:
+                cterm_variants.append((acid_smi, "C-term acid of {}".format(best_seed.ligand_name)))
+            amide_smi = make_cterm_amide(best_seed.smiles)
+            if amide_smi:
+                cterm_variants.append((amide_smi, "C-term amide of {}".format(best_seed.ligand_name)))
+
+            for ct_smi, ct_ann in cterm_variants:
+                ct_name = "bb_r{:02d}_cterm_{}".format(
+                    round_num, "acid" if "acid" in ct_ann else "amide")
+                try:
+                    ct_pdbqt = smiles_to_pdbqt(ct_smi, name=ct_name, output_dir=round_dir)
+                    ct_result = run_vina(
+                        receptor_pdbqt=receptor_pdbqt,
+                        ligand_pdbqt=ct_pdbqt,
+                        ligand_name=ct_name,
+                        smiles=ct_smi,
+                        docking_params=config.docking,
+                        output_dir=round_dir,
+                        vina_executable=config.vina_executable,
+                        origin="backbone",
+                    )
+                    ct_result.annotation = ct_ann
+                    all_results.append(ct_result)
+                    logger.info("  %s [%s]: %.2f kcal/mol", ct_name, ct_ann, ct_result.best_energy)
+                except Exception as e:
+                    logger.error("Failed to dock %s [%s]: %s", ct_name, ct_ann, e)
 
         new_best = current_seeds[0].best_energy
         improvement = best_score - new_best

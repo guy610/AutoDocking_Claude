@@ -96,6 +96,7 @@ class CandidateRecord:
     smiles: str
     docking_score: float
     stereo: str = ""  # R/S annotation (e.g. "AA1-S, AA2-S, AA3-R")
+    annotation: str = ""  # Modification description (e.g. "Pos1: D-amino acid")
     n_hbonds: int = 0
     n_polar_contacts: int = 0
     n_backbone_mutations: int = 0
@@ -114,6 +115,7 @@ def results_to_records(results, original_smiles: str = "") -> List[CandidateReco
             smiles=r.smiles,
             docking_score=r.best_energy,
             stereo=stereo,
+            annotation=getattr(r, 'annotation', ''),
         ))
     return records
 
@@ -124,7 +126,7 @@ def generate_csv_report(records: List[CandidateRecord],
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     fieldnames = [
-        "rank", "uid", "origin", "smiles", "docking_score", "stereo",
+        "rank", "uid", "origin", "annotation", "smiles", "docking_score", "stereo",
         "n_hbonds", "n_polar_contacts",
         "n_backbone_interactions", "n_sidechain_interactions",
     ]
@@ -140,6 +142,7 @@ def generate_csv_report(records: List[CandidateRecord],
                 "rank": i,
                 "uid": rec.uid,
                 "origin": rec.origin,
+                "annotation": rec.annotation,
                 "smiles": rec.smiles,
                 "docking_score": round(rec.docking_score, 2),
                 "stereo": rec.stereo,

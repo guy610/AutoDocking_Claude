@@ -154,6 +154,81 @@ class DockingPipeline:
                 logger.info("Best candidate: %s (%.2f kcal/mol)",
                             best.ligand_name, best.best_energy)
 
+            # Generate QC complex PDBs for backbone modification categories
+            self._generate_qc_complexes()
+
+    def _generate_qc_complexes(self):
+        """Generate QC complex PDBs for best D-amino acid, beta-amino acid,
+        and unnatural amino acid candidates.
+
+        These complexes let users visually verify that backbone modifications
+        and unnatural residues are docking correctly.
+        """
+        if not self.receptor_clean_pdb or not self.receptor_clean_pdb.exists():
+            return
+
+        qc_dir = ensure_dir(self.config.output_dir / "qc_complexes")
+
+        # Collect custom UAA names for identification
+        custom_uaa_names = set()
+        for name in getattr(self.config.optimization, 'sc_custom_sidechains', {}):
+            custom_uaa_names.add(name.upper())
+
+        # Categorize results by modification type using annotation
+        best_d_amino = None      # Best D-amino acid result
+        best_beta = None         # Best beta-amino acid result
+        best_uaa = None          # Best unnatural amino acid result
+
+        for r in self.all_results:
+            ann = getattr(r, 'annotation', '').lower()
+            if not ann:
+                continue
+
+            # D-amino acid detection
+            if 'd-amino' in ann:
+                if best_d_amino is None or r.best_energy < best_d_amino.best_energy:
+                    best_d_amino = r
+
+            # Beta-amino acid detection (beta-2 or beta-3)
+            if 'beta-2' in ann or 'beta-3' in ann or 'beta' in ann:
+                if best_beta is None or r.best_energy < best_beta.best_energy:
+                    best_beta = r
+
+            # Unnatural amino acid detection:
+            # Check if annotation references any custom UAA name
+            if custom_uaa_names:
+                ann_upper = getattr(r, 'annotation', '').upper()
+                for uaa_name in custom_uaa_names:
+                    if uaa_name in ann_upper:
+                        if best_uaa is None or r.best_energy < best_uaa.best_energy:
+                            best_uaa = r
+                        break
+
+        # Generate QC complexes
+        qc_entries = [
+            (best_d_amino, "qc_best_d_amino_acid_complex.pdb", "D-amino acid"),
+            (best_beta, "qc_best_beta_amino_acid_complex.pdb", "Beta-amino acid"),
+            (best_uaa, "qc_best_unnatural_aa_complex.pdb", "Unnatural amino acid"),
+        ]
+
+        generated = []
+        for result, filename, label in qc_entries:
+            if result and result.best_pose_pdb and result.best_pose_pdb.exists():
+                complex_path = qc_dir / filename
+                generate_complex_pdb(
+                    self.receptor_clean_pdb, result.best_pose_pdb,
+                    complex_path, ligand_name=result.ligand_name,
+                )
+                generated.append(label)
+                logger.info("QC complex (%s): %s -> %s (%.2f kcal/mol, %s)",
+                            label, result.ligand_name, complex_path,
+                            result.best_energy, getattr(result, 'annotation', ''))
+
+        if generated:
+            logger.info("=== QC Complexes generated: %s ===", ", ".join(generated))
+        else:
+            logger.info("No QC complexes generated (no backbone/UAA modifications found)")
+
     def estimate_total_docks(self) -> int:
         """Estimate total number of docking operations for the full pipeline.
 

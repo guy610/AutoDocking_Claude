@@ -137,6 +137,20 @@ def checkpoint_response():
     return jsonify({"status": "ok"})
 
 
+@app.route("/api/status")
+def status():
+    """Return current pipeline status so the browser can reconnect."""
+    if runner is None:
+        return jsonify({"state": "idle"})
+    if runner.is_running and not runner.is_complete:
+        return jsonify({"state": "running"})
+    if runner.is_complete and runner.results:
+        return jsonify({"state": "complete", "results": runner.results})
+    if runner.is_complete and not runner.results:
+        return jsonify({"state": "error"})
+    return jsonify({"state": "idle"})
+
+
 @app.route("/api/results")
 def results():
     if runner and runner.results:
@@ -166,6 +180,45 @@ def download_complex():
             return send_from_directory(str(pdb_path.parent), pdb_path.name,
                                        as_attachment=True)
     return jsonify({"error": "No complex PDB available"}), 404
+
+
+@app.route("/api/download_qc/<qc_type>")
+def download_qc_complex(qc_type):
+    """Serve a QC complex PDB file.
+
+    qc_type: 'd_amino' | 'beta_amino' | 'unnatural'
+    """
+    filenames = {
+        "d_amino": "qc_best_d_amino_acid_complex.pdb",
+        "beta_amino": "qc_best_beta_amino_acid_complex.pdb",
+        "unnatural": "qc_best_unnatural_aa_complex.pdb",
+    }
+    if qc_type not in filenames:
+        return jsonify({"error": "Unknown QC type: " + qc_type}), 400
+    if runner and runner.config_data:
+        output_dir = Path(runner.config_data.get("output_dir", "output"))
+        pdb_path = output_dir / "qc_complexes" / filenames[qc_type]
+        if pdb_path.exists():
+            return send_from_directory(str(pdb_path.parent), pdb_path.name,
+                                       as_attachment=True)
+    return jsonify({"error": "QC complex not available (no " + qc_type.replace("_", " ") + " candidates found)"}), 404
+
+
+@app.route("/api/qc_status")
+def qc_status():
+    """Return which QC complexes are available for download."""
+    available = {}
+    if runner and runner.config_data:
+        output_dir = Path(runner.config_data.get("output_dir", "output"))
+        qc_dir = output_dir / "qc_complexes"
+        checks = {
+            "d_amino": "qc_best_d_amino_acid_complex.pdb",
+            "beta_amino": "qc_best_beta_amino_acid_complex.pdb",
+            "unnatural": "qc_best_unnatural_aa_complex.pdb",
+        }
+        for key, fname in checks.items():
+            available[key] = (qc_dir / fname).exists()
+    return jsonify(available)
 
 
 def open_browser():
