@@ -57,6 +57,12 @@ class OptimizationParams:
     # C-terminal cap scanning
     scan_cterm_caps: bool = False  # dock best candidate per round in both acid (COO-) and amide (CONH2) forms
 
+    # N-terminal modifications (applied to best candidate per round)
+    nterm_dimethyl: bool = False       # replace N-H with N-CH3 (2x for primary amines, 1x for proline)
+    nterm_acyl: bool = False           # acylate N-terminus with variable chain
+    nterm_acyl_carbons: int = 2        # 2=acetyl, 16=palmitoyl
+    nterm_custom_smiles: str = ""      # SMILES with [*] for bond to N-terminal nitrogen
+
     # Validation
     max_residues: int = 5            # reject peptides longer than this
     poor_binding_threshold: float = -4.0  # kcal/mol; scores above this trigger alert

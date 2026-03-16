@@ -219,6 +219,287 @@ def make_cterm_acid_deprot(smiles: str) -> Optional[str]:
     return None
 
 
+def find_nterm_nitrogen(mol) -> Optional[int]:
+    """Find the N-terminal nitrogen atom index in a peptide.
+
+    The N-terminal N is identified by:
+    1. Being bonded to an alpha carbon (a C that has a C(=O) neighbor)
+    2. NOT being itself bonded to any carbonyl C (which would make it a mid-chain amide N)
+    3. NOT being part of a guanidinium group (arginine)
+
+    This naturally excludes lysine sidechain NH2 (bonded to CH2 with no C=O)
+    and UAA sidechain amines.
+
+    Returns the atom index, or None if not found.
+    """
+    if mol is None:
+        return None
+
+    # Pre-compute guanidinium nitrogens to exclude (arginine)
+    guanidinium_ns = set()
+    guan_pat = Chem.MolFromSmarts('[NH]C(=[NH])N')
+    if guan_pat:
+        for match in mol.GetSubstructMatches(guan_pat):
+            for idx in match:
+                if mol.GetAtomWithIdx(idx).GetSymbol() == 'N':
+                    guanidinium_ns.add(idx)
+    # Also catch protonated forms
+    guan_pat2 = Chem.MolFromSmarts('[NH]C(=[NH2+])N')
+    if guan_pat2:
+        for match in mol.GetSubstructMatches(guan_pat2):
+            for idx in match:
+                if mol.GetAtomWithIdx(idx).GetSymbol() == 'N':
+                    guanidinium_ns.add(idx)
+
+    for atom in mol.GetAtoms():
+        if atom.GetSymbol() != 'N':
+            continue
+        if atom.GetIdx() in guanidinium_ns:
+            continue
+
+        # Check: is this N bonded to any C that has a C=O? (amide N check)
+        is_amide_n = False
+        has_alpha_c_neighbor = False
+
+        for bond in atom.GetBonds():
+            neighbor = bond.GetOtherAtom(atom)
+            if neighbor.GetSymbol() != 'C':
+                continue
+
+            # Check if this neighbor C has a double bond to O (making this an amide N)
+            neighbor_has_carbonyl = False
+            for nb_bond in neighbor.GetBonds():
+                nb_other = nb_bond.GetOtherAtom(neighbor)
+                if (nb_other.GetSymbol() == 'O' and
+                        nb_bond.GetBondTypeAsDouble() == 2.0):
+                    neighbor_has_carbonyl = True
+                    break
+
+            if neighbor_has_carbonyl:
+                # This N is bonded to a C=O carbon -> it's an amide N
+                is_amide_n = True
+                break
+
+            # Check if this neighbor C is an alpha carbon
+            # (alpha-C has a C(=O) neighbor, i.e., the peptide bond carbonyl)
+            for nb_bond2 in neighbor.GetBonds():
+                nb_other2 = nb_bond2.GetOtherAtom(neighbor)
+                if nb_other2.GetIdx() == atom.GetIdx():
+                    continue
+                if nb_other2.GetSymbol() == 'C':
+                    for nb_bond3 in nb_other2.GetBonds():
+                        nb_other3 = nb_bond3.GetOtherAtom(nb_other2)
+                        if (nb_other3.GetSymbol() == 'O' and
+                                nb_bond3.GetBondTypeAsDouble() == 2.0):
+                            has_alpha_c_neighbor = True
+                            break
+                    if has_alpha_c_neighbor:
+                        break
+
+        if not is_amide_n and has_alpha_c_neighbor:
+            return atom.GetIdx()
+
+    return None
+
+
+def make_nterm_dimethyl(smiles: str) -> Optional[str]:
+    """Replace all N-H bonds on N-terminal nitrogen with N-CH3.
+
+    For primary amines (most AAs): NH2 -> N(CH3)2 (2 methyls added)
+    For secondary amines (proline): NH -> N(CH3) (1 methyl added)
+
+    Returns modified SMILES, or None if conversion fails.
+    """
+    mol = Chem.MolFromSmiles(smiles)
+    if mol is None:
+        return None
+
+    n_idx = find_nterm_nitrogen(mol)
+    if n_idx is None:
+        logger.debug("Cannot find N-terminal nitrogen for dimethylation")
+        return None
+
+    try:
+        rw = Chem.RWMol(mol)
+        n_atom = rw.GetAtomWithIdx(n_idx)
+        n_hs = n_atom.GetTotalNumHs()
+
+        if n_hs == 0:
+            logger.debug("N-terminal N has no H's to replace with CH3")
+            return None
+
+        # Add methyl groups for each H
+        n_atom.SetNoImplicit(True)
+        n_atom.SetNumExplicitHs(0)
+        # Clear any formal charge (e.g. NH3+ -> N(CH3)2 at neutral state)
+        n_atom.SetFormalCharge(0)
+
+        for _ in range(n_hs):
+            c_idx = rw.AddAtom(Chem.Atom(6))  # carbon
+            rw.AddBond(n_idx, c_idx, Chem.BondType.SINGLE)
+
+        Chem.SanitizeMol(rw)
+        new_smi = Chem.MolToSmiles(rw)
+        if new_smi and Chem.MolFromSmiles(new_smi) is not None:
+            return new_smi
+    except Exception as e:
+        logger.debug("N-term dimethylation failed: %s", e)
+
+    return None
+
+
+def make_nterm_acyl(smiles: str, n_carbons: int = 2) -> Optional[str]:
+    """Acylate the N-terminal nitrogen with a variable-length acyl chain.
+
+    Forms an amide bond: R-C(=O)-NH-peptide
+    n_carbons=2 -> acetyl (CH3-CO-), n_carbons=16 -> palmitoyl (C15H31-CO-)
+
+    For primary amines: NH2 -> NH-C(=O)-R (one H replaced)
+    For secondary amines (proline): NH -> N-C(=O)-R (the one H replaced)
+
+    Returns modified SMILES, or None if conversion fails.
+    """
+    if n_carbons < 2:
+        logger.debug("n_carbons must be >= 2 for acylation")
+        return None
+
+    mol = Chem.MolFromSmiles(smiles)
+    if mol is None:
+        return None
+
+    n_idx = find_nterm_nitrogen(mol)
+    if n_idx is None:
+        logger.debug("Cannot find N-terminal nitrogen for acylation")
+        return None
+
+    try:
+        rw = Chem.RWMol(mol)
+        n_atom = rw.GetAtomWithIdx(n_idx)
+        n_hs = n_atom.GetTotalNumHs()
+
+        if n_hs == 0:
+            logger.debug("N-terminal N has no H's for acylation")
+            return None
+
+        # Remove one H from N
+        n_atom.SetNoImplicit(True)
+        n_atom.SetNumExplicitHs(max(0, n_hs - 1))
+        n_atom.SetFormalCharge(0)
+
+        # Build acyl chain: carbonyl C first, then CH2 chain, then terminal CH3
+        # N -- C(=O) -- (CH2)_{n-2} -- CH3
+        # Actually: N -- C(=O) -- CH2 -- CH2 -- ... -- CH3
+        # The carbonyl C is the first C, then (n-2) more carbons in the chain
+        # Total carbons = n_carbons
+
+        # Add carbonyl carbon
+        co_c_idx = rw.AddAtom(Chem.Atom(6))  # carbonyl C
+        rw.AddBond(n_idx, co_c_idx, Chem.BondType.SINGLE)
+
+        # Add carbonyl oxygen (=O)
+        o_idx = rw.AddAtom(Chem.Atom(8))
+        rw.AddBond(co_c_idx, o_idx, Chem.BondType.DOUBLE)
+
+        # Add remaining carbons in chain (n_carbons - 1 more carbons)
+        prev_idx = co_c_idx
+        for _ in range(n_carbons - 1):
+            c_idx = rw.AddAtom(Chem.Atom(6))
+            rw.AddBond(prev_idx, c_idx, Chem.BondType.SINGLE)
+            prev_idx = c_idx
+
+        Chem.SanitizeMol(rw)
+        new_smi = Chem.MolToSmiles(rw)
+        if new_smi and Chem.MolFromSmiles(new_smi) is not None:
+            return new_smi
+    except Exception as e:
+        logger.debug("N-term acylation failed: %s", e)
+
+    return None
+
+
+def make_nterm_custom(smiles: str, mod_smiles: str) -> Optional[str]:
+    """Apply a custom modification to the N-terminal nitrogen.
+
+    The mod_smiles must contain [*] (dummy atom) marking the bond point
+    to the N-terminal nitrogen. The [*] is replaced by a direct bond.
+
+    Example: mod_smiles = "[*]C(=O)CCCCC" for hexanoyl
+             mod_smiles = "[*]C" for simple methylation
+
+    For primary amines: one H is replaced by the modification
+    For secondary amines (proline): the single H is replaced
+
+    Returns modified SMILES, or None if conversion fails.
+    """
+    mol = Chem.MolFromSmiles(smiles)
+    if mol is None:
+        return None
+
+    mod_mol = Chem.MolFromSmiles(mod_smiles)
+    if mod_mol is None:
+        logger.debug("Cannot parse modification SMILES: %s", mod_smiles)
+        return None
+
+    n_idx = find_nterm_nitrogen(mol)
+    if n_idx is None:
+        logger.debug("Cannot find N-terminal nitrogen for custom modification")
+        return None
+
+    # Find the dummy atom [*] in the modification
+    dummy_idx = None
+    dummy_neighbor_idx = None
+    for atom in mod_mol.GetAtoms():
+        if atom.GetAtomicNum() == 0:  # dummy atom
+            dummy_idx = atom.GetIdx()
+            # Find the neighbor of the dummy (the actual attachment point)
+            neighbors = atom.GetNeighbors()
+            if len(neighbors) != 1:
+                logger.debug("Dummy atom [*] must have exactly 1 neighbor, got %d",
+                             len(neighbors))
+                return None
+            dummy_neighbor_idx = neighbors[0].GetIdx()
+            break
+
+    if dummy_idx is None:
+        logger.debug("No [*] dummy atom found in modification SMILES: %s", mod_smiles)
+        return None
+
+    try:
+        # Combine both molecules
+        combo = Chem.RWMol(Chem.CombineMols(mol, mod_mol))
+
+        # Adjust indices: mod atoms are shifted by mol.GetNumAtoms()
+        offset = mol.GetNumAtoms()
+        new_dummy_idx = dummy_idx + offset
+        new_neighbor_idx = dummy_neighbor_idx + offset
+
+        # Remove one H from N-terminal
+        n_atom = combo.GetAtomWithIdx(n_idx)
+        n_hs = n_atom.GetTotalNumHs()
+        if n_hs == 0:
+            logger.debug("N-terminal N has no H's for custom modification")
+            return None
+
+        n_atom.SetNoImplicit(True)
+        n_atom.SetNumExplicitHs(max(0, n_hs - 1))
+        n_atom.SetFormalCharge(0)
+
+        # Add bond from N to the dummy's neighbor
+        combo.AddBond(n_idx, new_neighbor_idx, Chem.BondType.SINGLE)
+
+        # Remove the dummy atom
+        combo.RemoveAtom(new_dummy_idx)
+
+        Chem.SanitizeMol(combo)
+        new_smi = Chem.MolToSmiles(combo)
+        if new_smi and Chem.MolFromSmiles(new_smi) is not None:
+            return new_smi
+    except Exception as e:
+        logger.debug("N-term custom modification failed: %s", e)
+
+    return None
+
+
 def smiles_to_3d(smiles: str, name: str = "ligand",
                  output_dir: Optional[Path] = None,
                  num_conformers: int = 1,

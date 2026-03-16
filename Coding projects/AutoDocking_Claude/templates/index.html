@@ -209,6 +209,33 @@
                         <strong>Scan C-terminal caps</strong> &mdash; dock best candidate per round in both acid (COO&#x207B;) and amide (CONH&#x2082;) forms at pH 7.3
                     </label>
                 </div>
+                <div style="margin-top: 0.5rem;">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="nterm-dimethyl">
+                        <strong>N-terminal methylation</strong> &mdash; replace N-H with N-CH&#x2083; on best candidate per round (2&times; for primary amines, 1&times; for proline)
+                    </label>
+                </div>
+                <div style="margin-top: 0.5rem;">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="nterm-acyl">
+                        <strong>N-terminal acylation</strong> &mdash; cap N-terminus with acyl group on best candidate per round
+                    </label>
+                    <div id="nterm-acyl-options" style="display:none; margin-left: 2rem; margin-top: 0.3rem;">
+                        <label for="nterm-acyl-carbons">Carbon chain length:</label>
+                        <input type="number" id="nterm-acyl-carbons" value="2" min="2" max="20" class="num-input" style="width: 70px;">
+                        <small style="color: #888; margin-left: 0.5rem;">2 = acetyl, 3 = propionyl, 16 = palmitoyl</small>
+                    </div>
+                </div>
+                <div style="margin-top: 0.5rem;">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="nterm-custom">
+                        <strong>Custom N-terminal modification</strong> &mdash; paste SMILES with [*] marking the bond to N-terminal nitrogen
+                    </label>
+                    <div id="nterm-custom-options" style="display:none; margin-left: 2rem; margin-top: 0.3rem;">
+                        <input type="text" id="nterm-custom-smiles" placeholder="e.g. [*]C(=O)CCCCCCCCCCCCCCC" class="text-input" style="width: 100%;">
+                        <small style="color: #888;">The [*] atom will be replaced by a bond to the N-terminal nitrogen. Example: [*]C(=O)C for acetyl, [*]C(=O)CCCCC for hexanoyl</small>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -345,7 +372,7 @@
                     Download receptor-ligand complex PDBs for the best candidate in each modification category.
                     Open in PyMOL or ChimeraX to visually verify modifications are docking correctly.
                 </p>
-                <div class="results-actions">
+                <div class="results-actions" style="flex-wrap: wrap; gap: 0.5rem;">
                     <a id="qc-d-amino" href="/api/download_qc/d_amino" class="btn btn-outline" style="display:none;">
                         &#x2B07; Best D-Amino Acid Complex
                     </a>
@@ -354,6 +381,18 @@
                     </a>
                     <a id="qc-unnatural" href="/api/download_qc/unnatural" class="btn btn-outline" style="display:none;">
                         &#x2B07; Best Unnatural AA Complex
+                    </a>
+                    <a id="qc-cterm-amide" href="/api/download_qc/cterm_amide" class="btn btn-outline" style="display:none;">
+                        &#x2B07; Best C-Term Amide Complex
+                    </a>
+                    <a id="qc-nterm-methyl" href="/api/download_qc/nterm_methyl" class="btn btn-outline" style="display:none;">
+                        &#x2B07; Best N-Term Methylated Complex
+                    </a>
+                    <a id="qc-nterm-acyl" href="/api/download_qc/nterm_acyl" class="btn btn-outline" style="display:none;">
+                        &#x2B07; Best N-Term Acylated Complex
+                    </a>
+                    <a id="qc-nterm-custom" href="/api/download_qc/nterm_custom" class="btn btn-outline" style="display:none;">
+                        &#x2B07; Best N-Term Custom Mod Complex
                     </a>
                 </div>
             </div>

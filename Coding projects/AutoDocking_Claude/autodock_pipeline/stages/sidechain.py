@@ -22,7 +22,10 @@ from rdkit import Chem
 
 from ..config import PipelineConfig
 from ..core.docking import DockingResult, run_vina
-from ..core.ligand import smiles_to_pdbqt, make_cterm_amide, make_cterm_acid_deprot
+from ..core.ligand import (
+    smiles_to_pdbqt, make_cterm_amide, make_cterm_acid_deprot,
+    make_nterm_dimethyl, make_nterm_acyl, make_nterm_custom,
+)
 from ..core.validators import validate_ligand, print_validation_alerts
 from ..utils.io_utils import ensure_dir, safe_filename
 
@@ -724,6 +727,53 @@ def run_sidechain_optimization(config: PipelineConfig,
                     logger.info("  %s [%s]: %.2f kcal/mol", ct_name, ct_ann, ct_result.best_energy)
                 except Exception as e:
                     logger.error("Failed to dock %s [%s]: %s", ct_name, ct_ann, e)
+
+        # N-terminal modifications: dock variants of best candidate
+        nterm_variants = []
+        best_seed = current_seeds[0]
+        opt = config.optimization
+
+        if getattr(opt, 'nterm_dimethyl', False):
+            dm_smi = make_nterm_dimethyl(best_seed.smiles)
+            if dm_smi:
+                nterm_variants.append((dm_smi, "dimethyl",
+                    "N-term methylation of {}".format(best_seed.ligand_name)))
+
+        if getattr(opt, 'nterm_acyl', False):
+            nc = getattr(opt, 'nterm_acyl_carbons', 2)
+            ac_smi = make_nterm_acyl(best_seed.smiles, n_carbons=nc)
+            if ac_smi:
+                chain_name = {2: "acetyl", 3: "propionyl", 16: "palmitoyl"}.get(
+                    nc, "C{}-acyl".format(nc))
+                nterm_variants.append((ac_smi, "acyl",
+                    "N-term {} of {}".format(chain_name, best_seed.ligand_name)))
+
+        custom_smi_str = getattr(opt, 'nterm_custom_smiles', "")
+        if custom_smi_str:
+            cu_smi = make_nterm_custom(best_seed.smiles, custom_smi_str)
+            if cu_smi:
+                nterm_variants.append((cu_smi, "custom",
+                    "N-term custom mod of {}".format(best_seed.ligand_name)))
+
+        for nt_smi, nt_tag, nt_ann in nterm_variants:
+            nt_name = "sc_r{:02d}_nterm_{}".format(round_num, nt_tag)
+            try:
+                nt_pdbqt = smiles_to_pdbqt(nt_smi, name=nt_name, output_dir=round_dir)
+                nt_result = run_vina(
+                    receptor_pdbqt=receptor_pdbqt,
+                    ligand_pdbqt=nt_pdbqt,
+                    ligand_name=nt_name,
+                    smiles=nt_smi,
+                    docking_params=config.docking,
+                    output_dir=round_dir,
+                    vina_executable=config.vina_executable,
+                    origin="sidechain",
+                )
+                nt_result.annotation = nt_ann
+                all_results.append(nt_result)
+                logger.info("  %s [%s]: %.2f kcal/mol", nt_name, nt_ann, nt_result.best_energy)
+            except Exception as e:
+                logger.error("Failed to dock %s [%s]: %s", nt_name, nt_ann, e)
 
         # Check for improvement
         new_best = current_seeds[0].best_energy

@@ -192,6 +192,10 @@ def download_qc_complex(qc_type):
         "d_amino": "qc_best_d_amino_acid_complex.pdb",
         "beta_amino": "qc_best_beta_amino_acid_complex.pdb",
         "unnatural": "qc_best_unnatural_aa_complex.pdb",
+        "cterm_amide": "qc_best_cterm_amide_complex.pdb",
+        "nterm_methyl": "qc_best_nterm_methyl_complex.pdb",
+        "nterm_acyl": "qc_best_nterm_acyl_complex.pdb",
+        "nterm_custom": "qc_best_nterm_custom_complex.pdb",
     }
     if qc_type not in filenames:
         return jsonify({"error": "Unknown QC type: " + qc_type}), 400
@@ -215,6 +219,10 @@ def qc_status():
             "d_amino": "qc_best_d_amino_acid_complex.pdb",
             "beta_amino": "qc_best_beta_amino_acid_complex.pdb",
             "unnatural": "qc_best_unnatural_aa_complex.pdb",
+            "cterm_amide": "qc_best_cterm_amide_complex.pdb",
+            "nterm_methyl": "qc_best_nterm_methyl_complex.pdb",
+            "nterm_acyl": "qc_best_nterm_acyl_complex.pdb",
+            "nterm_custom": "qc_best_nterm_custom_complex.pdb",
         }
         for key, fname in checks.items():
             available[key] = (qc_dir / fname).exists()

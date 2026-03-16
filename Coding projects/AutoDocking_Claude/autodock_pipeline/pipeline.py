@@ -178,6 +178,10 @@ class DockingPipeline:
         best_d_amino = None      # Best D-amino acid result
         best_beta = None         # Best beta-amino acid result
         best_uaa = None          # Best unnatural amino acid result
+        best_cterm_amide = None  # Best C-terminal amide result
+        best_nterm_methyl = None # Best N-terminal methylated result
+        best_nterm_acyl = None   # Best N-terminal acylated result
+        best_nterm_custom = None # Best N-terminal custom mod result
 
         for r in self.all_results:
             ann = getattr(r, 'annotation', '').lower()
@@ -194,6 +198,26 @@ class DockingPipeline:
                 if best_beta is None or r.best_energy < best_beta.best_energy:
                     best_beta = r
 
+            # C-terminal amide detection
+            if 'c-term amide' in ann:
+                if best_cterm_amide is None or r.best_energy < best_cterm_amide.best_energy:
+                    best_cterm_amide = r
+
+            # N-terminal methylation detection
+            if 'n-term methylation' in ann or 'n-term dimethyl' in ann:
+                if best_nterm_methyl is None or r.best_energy < best_nterm_methyl.best_energy:
+                    best_nterm_methyl = r
+
+            # N-terminal acylation detection
+            if 'n-term acetyl' in ann or 'n-term propionyl' in ann or 'n-term palmitoyl' in ann or ('n-term c' in ann and '-acyl' in ann):
+                if best_nterm_acyl is None or r.best_energy < best_nterm_acyl.best_energy:
+                    best_nterm_acyl = r
+
+            # N-terminal custom modification detection
+            if 'n-term custom' in ann:
+                if best_nterm_custom is None or r.best_energy < best_nterm_custom.best_energy:
+                    best_nterm_custom = r
+
             # Unnatural amino acid detection:
             # Check if annotation references any custom UAA name
             if custom_uaa_names:
@@ -209,6 +233,10 @@ class DockingPipeline:
             (best_d_amino, "qc_best_d_amino_acid_complex.pdb", "D-amino acid"),
             (best_beta, "qc_best_beta_amino_acid_complex.pdb", "Beta-amino acid"),
             (best_uaa, "qc_best_unnatural_aa_complex.pdb", "Unnatural amino acid"),
+            (best_cterm_amide, "qc_best_cterm_amide_complex.pdb", "C-term amide"),
+            (best_nterm_methyl, "qc_best_nterm_methyl_complex.pdb", "N-term methylated"),
+            (best_nterm_acyl, "qc_best_nterm_acyl_complex.pdb", "N-term acylated"),
+            (best_nterm_custom, "qc_best_nterm_custom_complex.pdb", "N-term custom"),
         ]
 
         generated = []

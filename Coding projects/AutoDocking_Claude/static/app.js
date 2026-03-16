@@ -183,6 +183,22 @@
                     r.value === "manual" ? "block" : "none";
             });
         });
+
+        // N-terminal acylation: show/hide carbon chain input
+        var ntermAcyl = $("#nterm-acyl");
+        if (ntermAcyl) {
+            ntermAcyl.addEventListener("change", function () {
+                $("#nterm-acyl-options").style.display = this.checked ? "block" : "none";
+            });
+        }
+
+        // N-terminal custom: show/hide SMILES input
+        var ntermCustom = $("#nterm-custom");
+        if (ntermCustom) {
+            ntermCustom.addEventListener("change", function () {
+                $("#nterm-custom-options").style.display = this.checked ? "block" : "none";
+            });
+        }
     }
 
     // ==================== Advanced Toggle ====================
@@ -319,6 +335,10 @@
             max_residues: $("#max-residues").value,
             poor_binding: $("#poor-binding").value,
             scan_cterm_caps: $("#scan-cterm-caps").checked,
+            nterm_dimethyl: $("#nterm-dimethyl").checked,
+            nterm_acyl: $("#nterm-acyl").checked,
+            nterm_acyl_carbons: $("#nterm-acyl-carbons").value,
+            nterm_custom_smiles: $("#nterm-custom-smiles") ? $("#nterm-custom-smiles").value : "",
             vina_executable: $("#vina-path").value,
             output_dir: $("#output-dir").value || "./output",
             user_smiles: $("#user-smiles").value,
@@ -450,20 +470,21 @@
             .then(function(r) { return r.json(); })
             .then(function(data) {
                 var anyAvailable = false;
-                if (data.d_amino) {
-                    var el = $("#qc-d-amino");
-                    if (el) el.style.display = "inline-block";
-                    anyAvailable = true;
-                }
-                if (data.beta_amino) {
-                    var el = $("#qc-beta-amino");
-                    if (el) el.style.display = "inline-block";
-                    anyAvailable = true;
-                }
-                if (data.unnatural) {
-                    var el = $("#qc-unnatural");
-                    if (el) el.style.display = "inline-block";
-                    anyAvailable = true;
+                var qcMap = {
+                    "d_amino": "qc-d-amino",
+                    "beta_amino": "qc-beta-amino",
+                    "unnatural": "qc-unnatural",
+                    "cterm_amide": "qc-cterm-amide",
+                    "nterm_methyl": "qc-nterm-methyl",
+                    "nterm_acyl": "qc-nterm-acyl",
+                    "nterm_custom": "qc-nterm-custom",
+                };
+                for (var key in qcMap) {
+                    if (data[key]) {
+                        var el = $("#" + qcMap[key]);
+                        if (el) el.style.display = "inline-block";
+                        anyAvailable = true;
+                    }
                 }
                 var section = $("#qc-section");
                 if (section && anyAvailable) {

@@ -182,6 +182,14 @@ class PipelineRunner:
             optimization.sc_custom_sidechains = custom_sidechains
         if d.get("scan_cterm_caps", False):
             optimization.scan_cterm_caps = True
+        if d.get("nterm_dimethyl", False):
+            optimization.nterm_dimethyl = True
+        if d.get("nterm_acyl", False):
+            optimization.nterm_acyl = True
+            optimization.nterm_acyl_carbons = int(d.get("nterm_acyl_carbons", 2))
+        nterm_custom = d.get("nterm_custom_smiles", "").strip()
+        if nterm_custom:
+            optimization.nterm_custom_smiles = nterm_custom
         mode = d.get("run_mode", "full")
         if mode == "single_dock":
             stages = []
