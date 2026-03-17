@@ -36,6 +36,7 @@ class DockingPipeline:
         self.original_result: Optional[DockingResult] = None
         self.receptor_pdbqt: Optional[Path] = None
         self.receptor_clean_pdb: Optional[Path] = None
+        self.triage_result = None  # TriageResult if auto_consensus was used
         self.checkpoint_handler = None  # Set for web mode
         self.run_checkpoint: Optional[RunCheckpoint] = None  # Resume support
         self.time_per_dock = 0.0  # Seconds per dock, measured from initial dock
@@ -143,8 +144,26 @@ class DockingPipeline:
         generate_csv_report(records, csv_path)
         md_path = self.config.output_dir / "results_report.md"
         generate_markdown_report(records, original_rec, md_path,
-                                 top_n=self.config.optimization.top_n_select)
+                                 top_n=self.config.optimization.top_n_select,
+                                 triage_result=self.triage_result,
+                                 min_pocket_volume=self.config.min_pocket_volume)
         logger.info("Reports written: %s, %s", csv_path, md_path)
+
+        # Log pocket triage QC status prominently
+        if self.triage_result:
+            is_fallback = "fallback" in self.triage_result.pocket_label.lower()
+            if is_fallback:
+                logger.warning("POCKET QC: FALLBACK - pocket did not meet volume threshold (%.0f A^3). "
+                               "Volume=%.0f A^3. %s",
+                               self.config.min_pocket_volume,
+                               self.triage_result.fpocket_volume,
+                               self.triage_result.pocket_label)
+            else:
+                logger.info("POCKET QC: PASS - pocket met volume threshold (%.0f A^3). "
+                            "Volume=%.0f A^3. %s",
+                            self.config.min_pocket_volume,
+                            self.triage_result.fpocket_volume,
+                            self.triage_result.pocket_label)
 
         # Generate complex PDB with best candidate docked to receptor
         if self.all_results and self.receptor_clean_pdb:
@@ -628,6 +647,7 @@ class DockingPipeline:
                     "detect any pockets in the receptor. Check that the PDB file "
                     "contains a valid protein structure, or use manual/pocket residue mode."
                 )
+            self.triage_result = triage_result
             self.config.docking.center_x = triage_result.center[0]
             self.config.docking.center_y = triage_result.center[1]
             self.config.docking.center_z = triage_result.center[2]

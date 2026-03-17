@@ -218,7 +218,9 @@ def generate_csv_report(records: List[CandidateRecord],
 def generate_markdown_report(records: List[CandidateRecord],
                              original_record: Optional[CandidateRecord],
                              output_path: Path,
-                             top_n: int = 10) -> Path:
+                             top_n: int = 10,
+                             triage_result=None,
+                             min_pocket_volume: float = 300.0) -> Path:
     """Write a human-readable markdown summary."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -233,6 +235,32 @@ def generate_markdown_report(records: List[CandidateRecord],
     lines.append("")
     lines.append("Generated: {}".format(datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
     lines.append("")
+
+    # Pocket Triage QC section
+    if triage_result is not None:
+        is_fallback = "fallback" in getattr(triage_result, 'pocket_label', '').lower()
+        vol = getattr(triage_result, 'fpocket_volume', 0.0)
+
+        lines.append("## Pocket Selection QC")
+        lines.append("")
+        if is_fallback:
+            lines.append("> **WARNING: Pocket selected by fallback** - no pocket met the volume")
+            lines.append("> threshold ({:.0f} A^3). The best available pocket was used instead.".format(min_pocket_volume))
+            lines.append("> Results should be interpreted with caution; consider manual pocket")
+            lines.append("> selection or lowering the volume threshold for this target.")
+        else:
+            lines.append("> **Pocket passed QC** - selected pocket met the volume threshold ({:.0f} A^3).".format(min_pocket_volume))
+        lines.append("")
+        lines.append("| Property | Value |")
+        lines.append("|----------|-------|")
+        lines.append("| Selection | {} |".format(triage_result.pocket_label))
+        lines.append("| P2Rank Score | {:.2f} |".format(triage_result.p2rank_score))
+        lines.append("| Fpocket Volume | {:.0f} A^3 |".format(vol))
+        lines.append("| Min Volume Threshold | {:.0f} A^3 |".format(min_pocket_volume))
+        lines.append("| Status | {} |".format("FALLBACK" if is_fallback else "PASS"))
+        lines.append("| Center | ({:.1f}, {:.1f}, {:.1f}) |".format(*triage_result.center))
+        lines.append("| Box Size | ({:.1f}, {:.1f}, {:.1f}) |".format(*triage_result.size))
+        lines.append("")
 
     # Original ligand summary
     if original_record:
