@@ -169,7 +169,8 @@ def run_minimization(config: PipelineConfig,
                      receptor_pdbqt,
                      initial_results: List[DockingResult],
                      original_score: float,
-                     time_per_dock: float = 0.0) -> List[DockingResult]:
+                     time_per_dock: float = 0.0,
+                     checkpoint=None) -> List[DockingResult]:
     """Execute the iterative sequence-minimization loop."""
     out_dir = ensure_dir(config.output_dir / "minimize")
     all_results = []
@@ -237,6 +238,17 @@ def run_minimization(config: PipelineConfig,
 
         for i, (smi, annotation) in enumerate(all_variants_with_ann):
             name = "min_r{:02d}_{:03d}".format(round_num, i + 1)
+
+            # Check checkpoint cache first
+            if checkpoint and checkpoint.has_result("minimize", smi):
+                result = checkpoint.reconstruct_result("minimize", smi)
+                if result is not None:
+                    round_results.append(result)
+                    all_results.append(result)
+                    logger.info("  %s [%s]: %.2f kcal/mol (cached)",
+                                name, annotation, result.best_energy)
+                    continue
+
             val = validate_ligand(smi, name=name,
                                   max_residues=config.optimization.max_residues)
             print_validation_alerts(val)
@@ -262,6 +274,8 @@ def run_minimization(config: PipelineConfig,
                     time_per_dock = 0.7 * time_per_dock + 0.3 * dock_elapsed
                 round_results.append(result)
                 all_results.append(result)
+                if checkpoint:
+                    checkpoint.save_result("minimize", result)
                 logger.info("  %s [%s]: %.2f kcal/mol (%.1fs)",
                             name, annotation, result.best_energy, dock_elapsed)
             except Exception as e:

@@ -13,6 +13,7 @@ from .core.ligand import smiles_to_pdbqt, smiles_to_3d
 from .core.receptor import clean_pdb, prepare_receptor_pdbqt
 from .core.checkpoint import interactive_checkpoint
 from .core.pocket import find_pocket_center
+from .core.run_checkpoint import RunCheckpoint
 from .core.validators import (
     validate_ligand, check_binding_quality,
     print_validation_alerts, print_binding_alerts,
@@ -36,6 +37,7 @@ class DockingPipeline:
         self.receptor_pdbqt: Optional[Path] = None
         self.receptor_clean_pdb: Optional[Path] = None
         self.checkpoint_handler = None  # Set for web mode
+        self.run_checkpoint: Optional[RunCheckpoint] = None  # Resume support
         self.time_per_dock = 0.0  # Seconds per dock, measured from initial dock
         self.estimated_end_time = 0.0  # Unix timestamp of estimated completion
         self.estimated_total_docks = 0  # Total estimated docking operations
@@ -82,7 +84,7 @@ class DockingPipeline:
     def _run_stage_with_checkpoint(self, stage_name, stage_func, seed_results):
         stage_key = stage_name.lower().replace(" ", "_").replace("-", "_")
         out_dir = ensure_dir(self.config.output_dir / stage_key)
-        results = stage_func(self.config, self.receptor_pdbqt, seed_results, self.original_score, time_per_dock=self.time_per_dock)
+        results = stage_func(self.config, self.receptor_pdbqt, seed_results, self.original_score, time_per_dock=self.time_per_dock, checkpoint=self.run_checkpoint)
         self.all_results.extend(results)
         top = sorted(seed_results + results, key=lambda r: r.best_energy)[:self.config.optimization.top_n_select]
         if self.checkpoint_handler:
@@ -596,10 +598,17 @@ class DockingPipeline:
         return total
 
     def run(self):
-        logger.info("Starting Stephen Docking v0.7.0")
+        logger.info("Starting Stephen Docking v0.8.1")
         logger.info("Run mode: %s", self.config.run_mode)
         logger.info("Receptor: %s", self.config.receptor_pdb)
         logger.info("Ligand SMILES: %s", self.config.ligand_smiles)
+
+        # Initialise checkpoint for resume support
+        self.run_checkpoint = RunCheckpoint(self.config.output_dir)
+        if self.run_checkpoint.n_cached > 0:
+            logger.info("=== RESUMING: found %d cached dock results ===",
+                        self.run_checkpoint.n_cached)
+
         self.receptor_pdbqt = self.prepare_receptor()
         # Auto-calculate docking box
         if self.config.box_mode == "auto_consensus":
@@ -643,9 +652,33 @@ class DockingPipeline:
             logger.info("Docking box set from pocket residues: center=(%.1f, %.1f, %.1f), size=(%.1f, %.1f, %.1f)",
                         center[0], center[1], center[2], size[0], size[1], size[2])
 
-        initial_result = self.dock_initial_ligand()
+        # Check checkpoint for initial dock
+        cached_initial = None
+        if self.run_checkpoint:
+            cached_initial = self.run_checkpoint.reconstruct_result(
+                "initial", self.config.ligand_smiles)
+        if cached_initial is not None:
+            initial_result = cached_initial
+            logger.info("Initial dock restored from checkpoint: %.2f kcal/mol",
+                        initial_result.best_energy)
+            # Estimate time_per_dock from checkpoint state or use default
+            state = self.run_checkpoint.load_state()
+            if state and "time_per_dock" in state:
+                self.time_per_dock = state["time_per_dock"]
+            else:
+                self.time_per_dock = 35.0  # reasonable default
+        else:
+            initial_result = self.dock_initial_ligand()
+            if self.run_checkpoint:
+                self.run_checkpoint.save_result("initial", initial_result)
+                self.run_checkpoint.save_state({
+                    "time_per_dock": self.time_per_dock,
+                })
+
         self.original_score = initial_result.best_energy
         self.original_result = initial_result
+        if cached_initial is not None:
+            self.all_results.append(initial_result)  # dock_initial_ligand does this itself
         current_best = [initial_result]
         score_str = str(initial_result.ligand_name) + " = " + str(round(initial_result.best_energy, 2)) + " kcal/mol"
         print("\n  Initial docking: " + score_str)

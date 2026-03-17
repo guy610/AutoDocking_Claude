@@ -562,7 +562,8 @@ def run_sidechain_optimization(config: PipelineConfig,
                                receptor_pdbqt,
                                initial_results: List[DockingResult],
                                original_score: float,
-                               time_per_dock: float = 0.0) -> List[DockingResult]:
+                               time_per_dock: float = 0.0,
+                               checkpoint=None) -> List[DockingResult]:
     """Execute the iterative side-chain optimization loop."""
     out_dir = ensure_dir(config.output_dir / "sidechain")
     all_results = []
@@ -618,6 +619,17 @@ def run_sidechain_optimization(config: PipelineConfig,
         for i, (smi, annotation) in enumerate(candidates_with_ann):
             name = "sc_r{:02d}_{:03d}".format(round_num, i + 1)
 
+            # Check checkpoint cache first
+            if checkpoint and checkpoint.has_result("sidechain", smi):
+                result = checkpoint.reconstruct_result("sidechain", smi)
+                if result is not None:
+                    result.annotation = annotation
+                    round_results.append(result)
+                    all_results.append(result)
+                    logger.info("  %s [%s]: %.2f kcal/mol (cached)",
+                                name, annotation, result.best_energy)
+                    continue
+
             # Validate
             val = validate_ligand(smi, name=name,
                                   max_residues=config.optimization.max_residues)
@@ -647,6 +659,9 @@ def run_sidechain_optimization(config: PipelineConfig,
                 result.annotation = annotation
                 round_results.append(result)
                 all_results.append(result)
+                # Save to checkpoint
+                if checkpoint:
+                    checkpoint.save_result("sidechain", result)
                 logger.info("  %s [%s]: %.2f kcal/mol (%.1fs)",
                             name, annotation, result.best_energy, dock_elapsed)
             except Exception as e:
@@ -710,6 +725,13 @@ def run_sidechain_optimization(config: PipelineConfig,
             for ct_smi, ct_ann in cterm_variants:
                 ct_name = "sc_r{:02d}_cterm_{}".format(
                     round_num, "acid" if "acid" in ct_ann else "amide")
+                if checkpoint and checkpoint.has_result("sidechain", ct_smi):
+                    ct_result = checkpoint.reconstruct_result("sidechain", ct_smi)
+                    if ct_result is not None:
+                        ct_result.annotation = ct_ann
+                        all_results.append(ct_result)
+                        logger.info("  %s [%s]: %.2f kcal/mol (cached)", ct_name, ct_ann, ct_result.best_energy)
+                        continue
                 try:
                     ct_pdbqt = smiles_to_pdbqt(ct_smi, name=ct_name, output_dir=round_dir)
                     ct_result = run_vina(
@@ -724,6 +746,8 @@ def run_sidechain_optimization(config: PipelineConfig,
                     )
                     ct_result.annotation = ct_ann
                     all_results.append(ct_result)
+                    if checkpoint:
+                        checkpoint.save_result("sidechain", ct_result)
                     logger.info("  %s [%s]: %.2f kcal/mol", ct_name, ct_ann, ct_result.best_energy)
                 except Exception as e:
                     logger.error("Failed to dock %s [%s]: %s", ct_name, ct_ann, e)
@@ -757,6 +781,13 @@ def run_sidechain_optimization(config: PipelineConfig,
 
         for nt_smi, nt_tag, nt_ann in nterm_variants:
             nt_name = "sc_r{:02d}_nterm_{}".format(round_num, nt_tag)
+            if checkpoint and checkpoint.has_result("sidechain", nt_smi):
+                nt_result = checkpoint.reconstruct_result("sidechain", nt_smi)
+                if nt_result is not None:
+                    nt_result.annotation = nt_ann
+                    all_results.append(nt_result)
+                    logger.info("  %s [%s]: %.2f kcal/mol (cached)", nt_name, nt_ann, nt_result.best_energy)
+                    continue
             try:
                 nt_pdbqt = smiles_to_pdbqt(nt_smi, name=nt_name, output_dir=round_dir)
                 nt_result = run_vina(
@@ -771,6 +802,8 @@ def run_sidechain_optimization(config: PipelineConfig,
                 )
                 nt_result.annotation = nt_ann
                 all_results.append(nt_result)
+                if checkpoint:
+                    checkpoint.save_result("sidechain", nt_result)
                 logger.info("  %s [%s]: %.2f kcal/mol", nt_name, nt_ann, nt_result.best_energy)
             except Exception as e:
                 logger.error("Failed to dock %s [%s]: %s", nt_name, nt_ann, e)
