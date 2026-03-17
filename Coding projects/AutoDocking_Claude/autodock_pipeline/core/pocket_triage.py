@@ -99,6 +99,9 @@ def run_p2rank(
 
     P2Rank writes ``<output_dir>/<basename>.pdb_predictions.csv``
     with columns including ``rank, score, center_x, center_y, center_z``.
+
+    Note: When running via WSL, paths with spaces (e.g. Google Drive)
+    cause issues. We copy the PDB to a WSL-native temp directory first.
     """
     if not p2rank_executable:
         return []
@@ -108,37 +111,93 @@ def run_p2rank(
 
     pdb_path = Path(receptor_pdb).resolve()
     out_path = output_dir.resolve()
+    is_wsl = p2rank_executable.lower().startswith("wsl ")
 
-    cmd = _build_cmd(p2rank_executable, [
-        "predict",
-        "-f", str(pdb_path),
-        "-o", str(out_path),
-    ])
+    if is_wsl:
+        # P2Rank can't handle /mnt/c/ paths with spaces — use WSL-native temp
+        wsl_exe = p2rank_executable[4:].strip()
+        try:
+            wsl_tmpdir_cmd = subprocess.run(
+                ["wsl", "mktemp", "-d"],
+                capture_output=True, text=True, timeout=10,
+            )
+            wsl_tmpdir = wsl_tmpdir_cmd.stdout.strip()
+            if not wsl_tmpdir:
+                logger.error("Failed to create WSL temp directory for P2Rank")
+                return []
 
-    logger.info("Running P2Rank: %s", " ".join(cmd))
+            # Copy PDB into WSL temp dir
+            wsl_pdb = "{}/{}".format(wsl_tmpdir, pdb_path.name)
+            wsl_outdir = "{}/p2rank_out".format(wsl_tmpdir)
+            subprocess.run(
+                ["wsl", "cp", _wsl_path(str(pdb_path)), wsl_pdb],
+                capture_output=True, timeout=30,
+            )
 
-    try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=300,
-        )
+            # Run P2Rank inside WSL with clean paths
+            cmd = ["wsl", "bash", "-c",
+                   "{} predict -f {} -o {}".format(wsl_exe, wsl_pdb, wsl_outdir)]
+            logger.info("Running P2Rank (WSL native): %s", " ".join(cmd))
 
-        if result.returncode != 0:
-            logger.error("P2Rank failed (exit %d):\n%s",
-                         result.returncode, result.stderr[:1000])
+            result = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=300,
+            )
+
+            if result.returncode != 0:
+                logger.error("P2Rank failed (exit %d):\nSTDOUT: %s\nSTDERR: %s",
+                             result.returncode,
+                             result.stdout[:500] if result.stdout else "",
+                             result.stderr[:500] if result.stderr else "")
+                return []
+
+            # Copy results back from WSL temp to Windows output_dir
+            subprocess.run(
+                ["wsl", "cp", "-r",
+                 wsl_outdir + "/.",
+                 _wsl_path(str(out_path))],
+                capture_output=True, timeout=60,
+            )
+            # Cleanup WSL temp
+            subprocess.run(
+                ["wsl", "rm", "-rf", wsl_tmpdir],
+                capture_output=True, timeout=10,
+            )
+
+        except FileNotFoundError:
+            logger.error("P2Rank executable not found: %s", p2rank_executable)
             return []
+        except subprocess.TimeoutExpired:
+            logger.error("P2Rank timed out (300 s)")
+            return []
+        except Exception as e:
+            logger.error("P2Rank error: %s", e)
+            return []
+    else:
+        # Native Linux — run directly
+        cmd = _build_cmd(p2rank_executable, [
+            "predict",
+            "-f", str(pdb_path),
+            "-o", str(out_path),
+        ])
+        logger.info("Running P2Rank: %s", " ".join(cmd))
 
-    except FileNotFoundError:
-        logger.error("P2Rank executable not found: %s", p2rank_executable)
-        return []
-    except subprocess.TimeoutExpired:
-        logger.error("P2Rank timed out (300 s)")
-        return []
-    except Exception as e:
-        logger.error("P2Rank error: %s", e)
-        return []
+        try:
+            result = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=300,
+            )
+            if result.returncode != 0:
+                logger.error("P2Rank failed (exit %d):\n%s",
+                             result.returncode, result.stderr[:1000])
+                return []
+        except FileNotFoundError:
+            logger.error("P2Rank executable not found: %s", p2rank_executable)
+            return []
+        except subprocess.TimeoutExpired:
+            logger.error("P2Rank timed out (300 s)")
+            return []
+        except Exception as e:
+            logger.error("P2Rank error: %s", e)
+            return []
 
     # Locate the predictions CSV.
     # P2Rank writes to <output_dir>/<basename>.pdb_predictions.csv
