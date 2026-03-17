@@ -106,6 +106,39 @@ def detect_gnina():
     return jsonify({"found": None})
 
 
+@app.route("/api/detect_p2rank")
+def detect_p2rank():
+    """Auto-detect P2Rank executable in WSL."""
+    import subprocess
+    for check in ["ls /opt/p2rank_2.5.1/prank", "ls /opt/p2rank/prank", "which prank"]:
+        try:
+            result = subprocess.run(
+                ["wsl", "bash", "-c", check],
+                capture_output=True, text=True, timeout=10,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                return jsonify({"found": "wsl " + result.stdout.strip()})
+        except Exception:
+            continue
+    return jsonify({"found": None})
+
+
+@app.route("/api/detect_fpocket")
+def detect_fpocket():
+    """Auto-detect Fpocket executable in WSL."""
+    import subprocess
+    try:
+        result = subprocess.run(
+            ["wsl", "bash", "-c", "which fpocket"],
+            capture_output=True, text=True, timeout=10,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return jsonify({"found": "wsl " + result.stdout.strip()})
+    except Exception:
+        pass
+    return jsonify({"found": None})
+
+
 @app.route("/api/detect_rxdock")
 def detect_rxdock():
     """Auto-detect RxDock (rbdock) executable in the project directory."""

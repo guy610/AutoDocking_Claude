@@ -149,12 +149,21 @@
                 </div>
                 <div class="form-row" style="margin-top:0.5rem;">
                     <label for="p2rank-path">P2Rank Executable</label>
-                    <input type="text" id="p2rank-path" placeholder="e.g. wsl /opt/p2rank/prank" class="text-input">
+                    <div class="inline-group">
+                        <input type="text" id="p2rank-path" placeholder="Leave blank to auto-detect in WSL" class="text-input flex-grow">
+                        <button type="button" id="detect-p2rank-btn" class="btn btn-secondary">Auto-Detect</button>
+                    </div>
                 </div>
                 <div class="form-row" style="margin-top:0.5rem;">
                     <label for="fpocket-path">Fpocket Executable</label>
-                    <input type="text" id="fpocket-path" placeholder="e.g. wsl fpocket" class="text-input">
+                    <div class="inline-group">
+                        <input type="text" id="fpocket-path" placeholder="Leave blank to auto-detect in WSL" class="text-input flex-grow">
+                        <button type="button" id="detect-fpocket-btn" class="btn btn-secondary">Auto-Detect</button>
+                    </div>
                 </div>
+                <p class="small" style="margin-top:0.5rem;color:#999;font-size:0.8rem;">
+                    Leave blank to auto-detect. Both tools must be installed in WSL (see INSTRUCTIONS.txt).
+                </p>
             </div>
         </div>
 

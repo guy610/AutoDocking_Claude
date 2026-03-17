@@ -185,9 +185,33 @@
             .catch(function() {});
     }
 
+    function detectP2Rank() {
+        fetch("/api/detect_p2rank")
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (data.found && $("#p2rank-path")) {
+                    $("#p2rank-path").value = data.found;
+                }
+            })
+            .catch(function() {});
+    }
+
+    function detectFpocket() {
+        fetch("/api/detect_fpocket")
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (data.found && $("#fpocket-path")) {
+                    $("#fpocket-path").value = data.found;
+                }
+            })
+            .catch(function() {});
+    }
+
     $("#detect-vina-btn").addEventListener("click", detectVina);
     if ($("#detect-gnina-btn")) $("#detect-gnina-btn").addEventListener("click", detectGnina);
     if ($("#detect-rxdock-btn")) $("#detect-rxdock-btn").addEventListener("click", detectRxDock);
+    if ($("#detect-p2rank-btn")) $("#detect-p2rank-btn").addEventListener("click", detectP2Rank);
+    if ($("#detect-fpocket-btn")) $("#detect-fpocket-btn").addEventListener("click", detectFpocket);
 
     // ==================== File Upload / Drop Zone ====================
     function setupDropZone() {
@@ -269,6 +293,11 @@
                 if (acInput) {
                     acInput.style.display =
                         r.value === "auto_consensus" ? "block" : "none";
+                    // Auto-detect P2Rank/Fpocket when first selected
+                    if (r.value === "auto_consensus") {
+                        if ($("#p2rank-path") && !$("#p2rank-path").value) detectP2Rank();
+                        if ($("#fpocket-path") && !$("#fpocket-path").value) detectFpocket();
+                    }
                 }
             });
         });

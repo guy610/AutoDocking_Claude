@@ -21,6 +21,28 @@ from ..utils.reporting import results_to_records
 logger = logging.getLogger(__name__)
 
 
+def _detect_wsl_tool(check_commands: list, fallback: str = "") -> str:
+    """Try to find a tool in WSL by running a series of check commands.
+
+    Each command is run via 'wsl bash -c "..."'. If any succeeds (exit 0)
+    and returns a non-empty path, return 'wsl <path>'. Otherwise return fallback.
+    """
+    import subprocess
+    for check in check_commands:
+        try:
+            result = subprocess.run(
+                ["wsl", "bash", "-c", check],
+                capture_output=True, text=True, timeout=10,
+            )
+            if result.returncode == 0:
+                path = result.stdout.strip()
+                if path:
+                    return "wsl " + path
+        except Exception:
+            continue
+    return fallback
+
+
 class QueueLogHandler(logging.Handler):
     """Logging handler that pushes records into a queue for SSE streaming."""
 
@@ -214,8 +236,26 @@ class PipelineRunner:
         if box_mode == "pocket" and not pocket_residues:
             box_mode = "default"  # fall back if no residues provided
         min_pocket_volume = float(d.get("min_pocket_volume", 300.0))
-        p2rank_executable = d.get("p2rank_executable", "")
-        fpocket_executable = d.get("fpocket_executable", "")
+        p2rank_executable = d.get("p2rank_executable", "").strip()
+        fpocket_executable = d.get("fpocket_executable", "").strip()
+
+        # Auto-detect P2Rank/Fpocket in WSL if user left fields empty
+        if box_mode == "auto_consensus":
+            if not p2rank_executable:
+                p2rank_executable = _detect_wsl_tool(
+                    ["ls /opt/p2rank_2.5.1/prank", "ls /opt/p2rank/prank",
+                     "which prank"],
+                    fallback="wsl /opt/p2rank_2.5.1/prank",
+                )
+                if p2rank_executable:
+                    logger.info("Auto-detected P2Rank: %s", p2rank_executable)
+            if not fpocket_executable:
+                fpocket_executable = _detect_wsl_tool(
+                    ["which fpocket"],
+                    fallback="wsl fpocket",
+                )
+                if fpocket_executable:
+                    logger.info("Auto-detected Fpocket: %s", fpocket_executable)
 
         user_smiles = []
         us = d.get("user_smiles", "")
