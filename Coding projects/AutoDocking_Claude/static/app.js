@@ -26,6 +26,7 @@
     var sortCol = null;
     var sortAsc = true;
     var uaaCounter = 0;
+    var lastRunConfig = null;  // Stores the config from the last run for rerun
 
     // ==================== Amino Acid Data ====================
     var AA_DATA = [
@@ -537,6 +538,7 @@
             if (!validate()) return;
 
             var data = collectFormData();
+            lastRunConfig = data;  // Save for rerun
             startBtn.disabled = true;
             startBtn.textContent = "Starting...";
 
@@ -962,6 +964,61 @@
         });
     }
 
+    // ==================== Rerun with Same Settings ====================
+    function rerunWithSameSettings(btn) {
+        // Try lastRunConfig first (same session), then fall back to saved config on server
+        if (lastRunConfig) {
+            doRerun(lastRunConfig, btn);
+        } else {
+            // Fetch the saved config from the server
+            fetch("/api/check_resume")
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    if (data.config) {
+                        lastRunConfig = data.config;
+                        doRerun(lastRunConfig, btn);
+                    } else {
+                        alert("No previous run configuration found. Please start a new run.");
+                        btn.disabled = false;
+                        btn.textContent = "Rerun Same Settings";
+                    }
+                })
+                .catch(function() {
+                    alert("Could not retrieve previous settings. Please start a new run.");
+                    btn.disabled = false;
+                    btn.textContent = "Rerun Same Settings";
+                });
+        }
+    }
+
+    function doRerun(config, btn) {
+        btn.disabled = true;
+        btn.textContent = "Starting...";
+
+        fetch("/api/start", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(config),
+        })
+            .then(function(r) { return r.json(); })
+            .then(function(resp) {
+                if (resp.error) {
+                    alert("Error: " + resp.error);
+                    btn.disabled = false;
+                    btn.textContent = "Rerun Same Settings";
+                    return;
+                }
+                showRunningView();
+                appendLog("INFO", "Rerunning with same settings...");
+                startSSE();
+            })
+            .catch(function(err) {
+                alert("Failed to start: " + err);
+                btn.disabled = false;
+                btn.textContent = "Rerun Same Settings";
+            });
+    }
+
     // ==================== New Run ====================
     function setupNewRunButtons() {
         $("#new-run-btn").addEventListener("click", function () {
@@ -970,6 +1027,23 @@
         $("#error-new-run").addEventListener("click", function () {
             window.location.reload();
         });
+
+        // Rerun from results view
+        var rerunBtn = $("#rerun-btn");
+        if (rerunBtn) {
+            rerunBtn.addEventListener("click", function() {
+                rerunWithSameSettings(rerunBtn);
+            });
+        }
+
+        // Rerun from error view
+        var errorRerunBtn = $("#error-rerun-btn");
+        if (errorRerunBtn) {
+            errorRerunBtn.addEventListener("click", function() {
+                rerunWithSameSettings(errorRerunBtn);
+            });
+        }
+
         // Resume from error view
         var errorResume = $("#error-resume-run");
         if (errorResume) {
