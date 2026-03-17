@@ -1,4 +1,4 @@
-/* Stephen Docking - Web UI JavaScript v0.8.1 */
+/* Stephen Docking - Web UI JavaScript v0.8.2 */
 
 (function () {
     "use strict";
@@ -69,6 +69,7 @@
         setupAAActions();
         setupUAAButtons();
         setupResumeButton();
+        setupConnectionLostButtons();
         checkSessionReconnect();
     });
 
@@ -696,8 +697,96 @@
         });
 
         source.onerror = function () {
+            source.close();
             appendLog("ERROR", "Connection to server lost.");
+            // Show the connection-lost banner with resume option
+            showConnectionLostBanner();
         };
+    }
+
+    var sseReconnectAttempts = 0;
+    var MAX_RECONNECT_ATTEMPTS = 3;
+
+    function showConnectionLostBanner() {
+        var banner = $("#connection-lost-banner");
+        if (!banner) return;
+
+        // First, try to silently reconnect a few times (server may just be restarting)
+        if (sseReconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+            sseReconnectAttempts++;
+            appendLog("INFO", "Attempting to reconnect (" + sseReconnectAttempts + "/" + MAX_RECONNECT_ATTEMPTS + ")...");
+            setTimeout(function() {
+                fetch("/api/status")
+                    .then(function(r) { return r.json(); })
+                    .then(function(data) {
+                        if (data.state === "running") {
+                            // Server is back and pipeline is still running — reconnect SSE
+                            appendLog("INFO", "Reconnected to running pipeline!");
+                            sseReconnectAttempts = 0;
+                            startSSE();
+                        } else if (data.state === "complete") {
+                            // Pipeline finished while we were disconnected
+                            sseReconnectAttempts = 0;
+                            currentResults = data.results || [];
+                            appendLog("INFO", "Pipeline completed while disconnected.");
+                            renderResults(currentResults);
+                            showResultsView();
+                        } else {
+                            // Server is back but pipeline is not running — show resume banner
+                            showConnectionLostBanner();
+                        }
+                    })
+                    .catch(function() {
+                        // Server still down — try again
+                        showConnectionLostBanner();
+                    });
+            }, 3000);  // Wait 3 seconds between retries
+            return;
+        }
+
+        // All retries exhausted — show the banner
+        sseReconnectAttempts = 0;
+        banner.style.display = "block";
+    }
+
+    function setupConnectionLostButtons() {
+        var resumeBtn = $("#running-resume-btn");
+        if (resumeBtn) {
+            resumeBtn.addEventListener("click", function() {
+                resumeBtn.disabled = true;
+                resumeBtn.textContent = "Resuming...";
+                fetch("/api/resume", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                })
+                    .then(function(r) { return r.json(); })
+                    .then(function(resp) {
+                        if (resp.error) {
+                            alert("Resume failed: " + resp.error);
+                            resumeBtn.disabled = false;
+                            resumeBtn.textContent = "Resume Run";
+                            return;
+                        }
+                        $("#connection-lost-banner").style.display = "none";
+                        appendLog("INFO", "Resuming run (cached docks will be skipped)...");
+                        startSSE();
+                        resumeBtn.disabled = false;
+                        resumeBtn.textContent = "Resume Run";
+                    })
+                    .catch(function(err) {
+                        alert("Resume failed: " + err);
+                        resumeBtn.disabled = false;
+                        resumeBtn.textContent = "Resume Run";
+                    });
+            });
+        }
+
+        var newRunBtn = $("#running-new-run-btn");
+        if (newRunBtn) {
+            newRunBtn.addEventListener("click", function() {
+                window.location.reload();
+            });
+        }
     }
 
     function appendLog(level, message) {

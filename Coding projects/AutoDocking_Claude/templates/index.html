@@ -15,7 +15,7 @@
 <div class="container">
     <header>
         <h1>Stephen Docking</h1>
-        <p class="subtitle">Peptide Optimization Pipeline v0.8.1</p>
+        <p class="subtitle">Peptide Optimization Pipeline v0.8.2</p>
     </header>
 
     <!-- ==================== RESUME BANNER ==================== -->
@@ -375,6 +375,20 @@
         <div class="card">
             <h2>Log Output</h2>
             <div id="log-viewer" class="log-viewer"></div>
+        </div>
+
+        <!-- Connection Lost Banner (shown when SSE drops during a run) -->
+        <div id="connection-lost-banner" class="card" style="display:none; background: #2d1a1a; border: 1px solid #ef4444; margin-top: 1rem;">
+            <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:0.75rem;">
+                <div>
+                    <strong style="color:#f87171;">Connection lost</strong>
+                    <span style="color:#94a3b8; margin-left:0.5rem;">The pipeline was interrupted (server restart or sleep).</span>
+                </div>
+                <div style="display:flex; gap:0.5rem;">
+                    <button id="running-resume-btn" class="btn btn-primary">Resume Run</button>
+                    <button id="running-new-run-btn" class="btn btn-secondary" style="font-size:0.85rem;">New Run</button>
+                </div>
+            </div>
         </div>
     </div>
 
