@@ -1,4 +1,4 @@
-/* Stephen Docking - Web UI JavaScript v0.7.0 */
+/* Stephen Docking - Web UI JavaScript v0.8.1 */
 
 (function () {
     "use strict";
@@ -68,8 +68,66 @@
         buildAAGrid();
         setupAAActions();
         setupUAAButtons();
+        setupResumeButton();
         checkSessionReconnect();
     });
+
+    // ==================== Resume Previous Run ====================
+    function setupResumeButton() {
+        // Check if a previous run checkpoint exists
+        fetch("/api/check_resume")
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (data.can_resume) {
+                    var banner = $("#resume-banner");
+                    if (banner) {
+                        banner.style.display = "block";
+                        var info = $("#resume-info");
+                        if (info) {
+                            info.textContent = data.n_cached + " docks cached in " + data.output_dir;
+                        }
+                    }
+                }
+            })
+            .catch(function() {});
+
+        var resumeBtn = $("#resume-btn");
+        if (resumeBtn) {
+            resumeBtn.addEventListener("click", function() {
+                resumeBtn.disabled = true;
+                resumeBtn.textContent = "Resuming...";
+                fetch("/api/resume", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                })
+                    .then(function(r) { return r.json(); })
+                    .then(function(resp) {
+                        if (resp.error) {
+                            alert("Resume failed: " + resp.error);
+                            resumeBtn.disabled = false;
+                            resumeBtn.textContent = "Resume Run";
+                            return;
+                        }
+                        $("#resume-banner").style.display = "none";
+                        showRunningView();
+                        appendLog("INFO", "Resuming previous run (cached docks will be skipped)...");
+                        startSSE();
+                    })
+                    .catch(function(err) {
+                        alert("Resume failed: " + err);
+                        resumeBtn.disabled = false;
+                        resumeBtn.textContent = "Resume Run";
+                    });
+            });
+        }
+
+        var dismissBtn = $("#dismiss-resume");
+        if (dismissBtn) {
+            dismissBtn.addEventListener("click", function() {
+                $("#resume-banner").style.display = "none";
+            });
+        }
+    }
 
     // ==================== Session Reconnect ====================
     function checkSessionReconnect() {
@@ -823,6 +881,36 @@
         $("#error-new-run").addEventListener("click", function () {
             window.location.reload();
         });
+        // Resume from error view
+        var errorResume = $("#error-resume-run");
+        if (errorResume) {
+            errorResume.addEventListener("click", function() {
+                errorResume.disabled = true;
+                errorResume.textContent = "Resuming...";
+                fetch("/api/resume", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                })
+                    .then(function(r) { return r.json(); })
+                    .then(function(resp) {
+                        if (resp.error) {
+                            alert("Resume failed: " + resp.error);
+                            errorResume.disabled = false;
+                            errorResume.textContent = "Resume Run";
+                            return;
+                        }
+                        errorView.style.display = "none";
+                        showRunningView();
+                        appendLog("INFO", "Resuming run (cached docks will be skipped)...");
+                        startSSE();
+                    })
+                    .catch(function(err) {
+                        alert("Resume failed: " + err);
+                        errorResume.disabled = false;
+                        errorResume.textContent = "Resume Run";
+                    });
+            });
+        }
     }
 
     // ==================== Utility ====================

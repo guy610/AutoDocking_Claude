@@ -58,6 +58,7 @@ BANNER_DIR = Path(__file__).parent / "Banner"
 
 # Global pipeline runner (single-user tool)
 runner = None
+LAST_CONFIG_FILE = Path(__file__).parent / ".last_run_config.json"
 
 
 @app.route("/")
@@ -122,9 +123,54 @@ def start():
     if runner and runner.is_running:
         return jsonify({"error": "Pipeline already running"}), 409
     config_data = request.json
+    # Save config so we can resume after a crash/sleep
+    try:
+        LAST_CONFIG_FILE.write_text(json.dumps(config_data, indent=2), encoding="utf-8")
+    except Exception:
+        pass
     runner = PipelineRunner(config_data)
     runner.start()
     return jsonify({"status": "started"})
+
+
+@app.route("/api/check_resume")
+def check_resume():
+    """Check if a previous run can be resumed (checkpoint exists)."""
+    if not LAST_CONFIG_FILE.exists():
+        return jsonify({"can_resume": False})
+    try:
+        config_data = json.loads(LAST_CONFIG_FILE.read_text(encoding="utf-8"))
+        output_dir = Path(config_data.get("output_dir", "output"))
+        checkpoint_file = output_dir / ".checkpoint_results.jsonl"
+        if checkpoint_file.exists():
+            # Count cached results
+            n_cached = sum(1 for line in checkpoint_file.read_text(encoding="utf-8").splitlines() if line.strip())
+            return jsonify({
+                "can_resume": True,
+                "output_dir": str(output_dir),
+                "n_cached": n_cached,
+                "config": config_data,
+            })
+    except Exception:
+        pass
+    return jsonify({"can_resume": False})
+
+
+@app.route("/api/resume", methods=["POST"])
+def resume():
+    """Resume a previous run using saved config + checkpoint."""
+    global runner
+    if runner and runner.is_running:
+        return jsonify({"error": "Pipeline already running"}), 409
+    if not LAST_CONFIG_FILE.exists():
+        return jsonify({"error": "No previous run config found"}), 404
+    try:
+        config_data = json.loads(LAST_CONFIG_FILE.read_text(encoding="utf-8"))
+    except Exception as e:
+        return jsonify({"error": "Failed to load config: " + str(e)}), 500
+    runner = PipelineRunner(config_data)
+    runner.start()
+    return jsonify({"status": "resumed"})
 
 
 @app.route("/api/stream")

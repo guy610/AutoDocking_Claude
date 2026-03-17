@@ -624,10 +624,9 @@ class DockingPipeline:
             )
             if triage_result is None:
                 raise ValueError(
-                    "Auto Pocket Triage failed: no pocket passed the volume threshold "
-                    "({:.0f} A^3). Try lowering min_pocket_volume or using manual/pocket residue mode.".format(
-                        self.config.min_pocket_volume
-                    )
+                    "Auto Pocket Triage failed: neither P2Rank nor Fpocket could "
+                    "detect any pockets in the receptor. Check that the PDB file "
+                    "contains a valid protein structure, or use manual/pocket residue mode."
                 )
             self.config.docking.center_x = triage_result.center[0]
             self.config.docking.center_y = triage_result.center[1]

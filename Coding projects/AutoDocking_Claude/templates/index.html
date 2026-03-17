@@ -15,8 +15,22 @@
 <div class="container">
     <header>
         <h1>Stephen Docking</h1>
-        <p class="subtitle">Peptide Optimization Pipeline v0.7.0</p>
+        <p class="subtitle">Peptide Optimization Pipeline v0.8.1</p>
     </header>
+
+    <!-- ==================== RESUME BANNER ==================== -->
+    <div id="resume-banner" class="card" style="display:none; background: #1a2940; border: 1px solid #3b82f6; margin-bottom: 1.5rem;">
+        <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:0.75rem;">
+            <div>
+                <strong style="color:#60a5fa;">Previous run detected</strong>
+                <span id="resume-info" style="color:#94a3b8; margin-left:0.5rem;"></span>
+            </div>
+            <div style="display:flex; gap:0.5rem;">
+                <button id="resume-btn" class="btn btn-primary">Resume Run</button>
+                <button id="dismiss-resume" class="btn btn-secondary" style="font-size:0.85rem;">Dismiss</button>
+            </div>
+        </div>
+    </div>
 
     <!-- ==================== FORM VIEW ==================== -->
     <div id="form-view">
@@ -462,7 +476,10 @@
             <h2>Pipeline Error</h2>
             <p id="error-message"></p>
             <pre id="error-traceback" class="log-viewer"></pre>
-            <button id="error-new-run" class="btn btn-secondary" style="margin-top:16px">New Run</button>
+            <div style="display:flex; gap:0.75rem; margin-top:16px;">
+                <button id="error-resume-run" class="btn btn-primary">Resume Run</button>
+                <button id="error-new-run" class="btn btn-secondary">New Run</button>
+            </div>
         </div>
     </div>
 

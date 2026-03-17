@@ -495,6 +495,9 @@ def run_pocket_triage(
     logger.info("  Volume threshold: %.0f A^3, distance threshold: %.1f A",
                 min_pocket_volume, distance_threshold)
 
+    # Collect all matched pockets (P2Rank pocket + closest Fpocket cavity)
+    matched_pockets = []  # list of (p2pocket, fpocket_cavity, distance)
+
     for p2pocket in p2rank_pockets:
         p2_center = (p2pocket.center_x, p2pocket.center_y, p2pocket.center_z)
 
@@ -519,26 +522,58 @@ def run_pocket_triage(
                      p2pocket.rank, p2pocket.score,
                      best_match.index, best_match.volume, best_dist, status)
 
-        if vol_pass:
-            box_side = _box_size_from_volume(best_match.volume)
-            label = "P2Rank #{} (score={:.2f}) + Fpocket #{} (vol={:.0f} A^3)".format(
-                p2pocket.rank, p2pocket.score, best_match.index, best_match.volume)
-            logger.info("  >>> SELECTED: %s", label)
-            return TriageResult(
-                center=p2_center,
-                size=(box_side, box_side, box_side),
-                p2rank_rank=p2pocket.rank,
-                p2rank_score=p2pocket.score,
-                fpocket_volume=best_match.volume,
-                pocket_label=label,
-            )
+        matched_pockets.append((p2pocket, best_match, best_dist))
 
-    # No pocket passed the filter
-    all_volumes = [c.volume for c in fpocket_cavities]
-    logger.warning(
-        "Pocket Triage: no P2Rank pocket passed the volume threshold (%.0f A^3). "
-        "Fpocket volumes found: %s",
-        min_pocket_volume,
-        ", ".join("{:.0f}".format(v) for v in sorted(all_volumes, reverse=True)),
+    # Strategy: if multiple matched pockets, apply volume threshold to pick the best.
+    # If only one matched pocket (or none pass threshold), use the best available
+    # regardless of volume — always return at least one pocket.
+    passing = [(p, c, d) for p, c, d in matched_pockets if c.volume >= min_pocket_volume]
+
+    if passing:
+        # Multiple candidates passed — pick by P2Rank rank (already sorted)
+        p2pocket, best_match, best_dist = passing[0]
+    elif matched_pockets:
+        # No pocket passed volume threshold — fall back to the best match
+        # (highest P2Rank score, i.e. first in list)
+        p2pocket, best_match, best_dist = matched_pockets[0]
+        logger.warning(
+            "No pocket passed volume threshold (%.0f A^3). "
+            "Falling back to best available: P2Rank #%d (vol=%.0f A^3)",
+            min_pocket_volume, p2pocket.rank, best_match.volume,
+        )
+    else:
+        # No Fpocket match at all — fall back to P2Rank #1 with default box
+        logger.warning(
+            "No Fpocket cavity matched any P2Rank pocket within %.1f A. "
+            "Falling back to P2Rank #1 center with default 25 A box.",
+            distance_threshold,
+        )
+        p2pocket = p2rank_pockets[0]
+        p2_center = (p2pocket.center_x, p2pocket.center_y, p2pocket.center_z)
+        label = "P2Rank #{} (score={:.2f}) [fallback - no Fpocket match]".format(
+            p2pocket.rank, p2pocket.score)
+        logger.info("  >>> SELECTED (fallback): %s", label)
+        return TriageResult(
+            center=p2_center,
+            size=(25.0, 25.0, 25.0),
+            p2rank_rank=p2pocket.rank,
+            p2rank_score=p2pocket.score,
+            fpocket_volume=0.0,
+            pocket_label=label,
+        )
+
+    p2_center = (p2pocket.center_x, p2pocket.center_y, p2pocket.center_z)
+    box_side = _box_size_from_volume(best_match.volume)
+    is_fallback = best_match.volume < min_pocket_volume
+    label = "P2Rank #{} (score={:.2f}) + Fpocket #{} (vol={:.0f} A^3){}".format(
+        p2pocket.rank, p2pocket.score, best_match.index, best_match.volume,
+        " [fallback - below volume threshold]" if is_fallback else "")
+    logger.info("  >>> SELECTED%s: %s", " (fallback)" if is_fallback else "", label)
+    return TriageResult(
+        center=p2_center,
+        size=(box_side, box_side, box_side),
+        p2rank_rank=p2pocket.rank,
+        p2rank_score=p2pocket.score,
+        fpocket_volume=best_match.volume,
+        pocket_label=label,
     )
-    return None
