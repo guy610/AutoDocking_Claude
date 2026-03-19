@@ -102,6 +102,11 @@ class CandidateRecord:
     n_backbone_mutations: int = 0
     n_backbone_interactions: int = 0
     n_sidechain_interactions: int = 0
+    # v0.9.2 ligand efficiency metrics
+    le: float = 0.0           # ligand efficiency (-dG / HAC)
+    lle: float = 0.0          # lipophilic ligand efficiency (pIC50 - logP)
+    lelp: float = 0.0         # logP / LE
+    rotatable_bonds: int = 0
 
 
 @dataclass
@@ -163,11 +168,33 @@ def generate_consensus_csv(records: List[ConsensusRecord],
     return output_path
 
 
-def results_to_records(results, original_smiles: str = "") -> List[CandidateRecord]:
-    """Convert DockingResult list to CandidateRecord list."""
+def results_to_records(
+    results,
+    original_smiles: str = "",
+    ligand_efficiencies: Optional[Dict] = None,
+    property_profiles: Optional[Dict] = None,
+) -> List[CandidateRecord]:
+    """Convert DockingResult list to CandidateRecord list.
+
+    Parameters
+    ----------
+    results : List[DockingResult]
+        Docking results to convert.
+    original_smiles : str
+        Parent ligand SMILES (unused, kept for API compat).
+    ligand_efficiencies : dict, optional
+        Map of SMILES -> LigandEfficiency for populating LE/LLE/LELP.
+    property_profiles : dict, optional
+        Map of SMILES -> PropertyProfile for populating rotatable bonds.
+    """
+    le_map = ligand_efficiencies or {}
+    pp_map = property_profiles or {}
+
     records = []
     for r in results:
         stereo = get_stereo_annotation(r.smiles) if r.smiles else ""
+        le_data = le_map.get(r.smiles)
+        pp_data = pp_map.get(r.smiles)
         records.append(CandidateRecord(
             uid=r.ligand_name,
             origin=r.origin,
@@ -175,6 +202,10 @@ def results_to_records(results, original_smiles: str = "") -> List[CandidateReco
             docking_score=r.best_energy,
             stereo=stereo,
             annotation=getattr(r, 'annotation', ''),
+            le=le_data.le if le_data else 0.0,
+            lle=le_data.lle if le_data else 0.0,
+            lelp=le_data.lelp if le_data else 0.0,
+            rotatable_bonds=pp_data.rotatable if pp_data else 0,
         ))
     return records
 
@@ -188,6 +219,7 @@ def generate_csv_report(records: List[CandidateRecord],
         "rank", "uid", "origin", "annotation", "smiles", "docking_score", "stereo",
         "n_hbonds", "n_polar_contacts",
         "n_backbone_interactions", "n_sidechain_interactions",
+        "le", "lle", "lelp", "rotatable_bonds",
     ]
 
     # Sort by score (best first)
@@ -209,6 +241,10 @@ def generate_csv_report(records: List[CandidateRecord],
                 "n_polar_contacts": rec.n_polar_contacts,
                 "n_backbone_interactions": rec.n_backbone_interactions,
                 "n_sidechain_interactions": rec.n_sidechain_interactions,
+                "le": round(rec.le, 3) if rec.le else "",
+                "lle": round(rec.lle, 2) if rec.lle else "",
+                "lelp": round(rec.lelp, 2) if rec.lelp else "",
+                "rotatable_bonds": rec.rotatable_bonds if rec.rotatable_bonds else "",
             })
 
     logger.info("CSV report written: %s (%d candidates)", output_path, len(records))

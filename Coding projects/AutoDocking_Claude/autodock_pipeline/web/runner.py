@@ -302,6 +302,70 @@ class PipelineRunner:
             stages=stages,
         )
 
+    def _build_sm_config(self):
+        """Build SmallMoleculeConfig from web form data."""
+        from ..config import SmallMoleculeConfig, DockingParams
+        d = self.config_data
+
+        docking = DockingParams(
+            exhaustiveness=int(d.get("sm_exhaustiveness", 16)),
+            num_modes=int(d.get("sm_num_modes", 9)),
+            energy_range=int(d.get("sm_energy_range", 3)),
+        )
+
+        sm_mode = d.get("sm_run_mode", "full")
+
+        # Auto-detect Vina in WSL if empty
+        vina_exec = d.get("sm_vina_executable", "").strip()
+        if not vina_exec:
+            vina_exec = d.get("vina_executable", "vina")
+
+        return SmallMoleculeConfig(
+            crystal_pdb=Path(d["receptor_path"]),  # reuses same upload field
+            ligand_resname=d.get("sm_ligand_resname", "").strip(),
+            ligand_chain=d.get("sm_ligand_chain", "").strip(),
+            autobox_padding=float(d.get("sm_autobox_padding", 4.0)),
+            max_analogs=int(d.get("sm_max_analogs", 50)),
+            enable_bioisosteres=d.get("sm_enable_bioisosteres", True),
+            enable_extensions=d.get("sm_enable_extensions", True),
+            enable_removals=d.get("sm_enable_removals", True),
+            # v0.9.1: Multi-round optimization
+            max_rounds=int(d.get("sm_max_rounds", 3)),
+            delta_threshold=float(d.get("sm_delta_threshold", 0.3)),
+            max_combos_per_round=int(d.get("sm_max_combos_per_round", 100)),
+            # v0.9.1: Property target window
+            property_target=d.get("sm_property_target", "cosmetic"),
+            target_logp_min=float(d.get("sm_target_logp_min", 1.0)),
+            target_logp_max=float(d.get("sm_target_logp_max", 3.0)),
+            target_mw_max=float(d.get("sm_target_mw_max", 350.0)),
+            target_psa_max=float(d.get("sm_target_psa_max", 70.0)),
+            target_hbd_max=int(d.get("sm_target_hbd_max", 2)),
+            target_hba_max=int(d.get("sm_target_hba_max", 5)),
+            # v0.9.1: Pro-drug esters & cyclization
+            enable_prodrug_esters=d.get("sm_enable_prodrug_esters", True),
+            enable_cyclization_detection=d.get("sm_enable_cyclization_detection", True),
+            # v0.9.2: SAR enhancements
+            enable_stereoisomer_enum=d.get("sm_enable_stereoisomer_enum", True),
+            stereo_max_centers=int(d.get("sm_stereo_max_centers", 4)),
+            stereo_final_top_n=int(d.get("sm_stereo_final_top_n", 5)),
+            enable_thioether_detection=d.get("sm_enable_thioether_detection", True),
+            enable_metabolic_blocking=d.get("sm_enable_metabolic_blocking", True),
+            enable_scaffold_hopping=d.get("sm_enable_scaffold_hopping", False),
+            max_scaffold_hops=int(d.get("sm_max_scaffold_hops", 10)),
+            enable_mmp_tracking=d.get("sm_enable_mmp_tracking", True),
+            enable_torsion_filter=d.get("sm_enable_torsion_filter", True),
+            torsion_amide_tolerance=float(d.get("sm_torsion_amide_tolerance", 30.0)),
+            target_rotatable_max=int(d.get("sm_target_rotatable_max", -1)),
+            docking=docking,
+            run_mode=sm_mode,
+            gnina_executable=d.get("sm_gnina_executable", "").strip(),
+            rxdock_executable=d.get("sm_rxdock_executable", "").strip(),
+            hierarchical_top_n=int(d.get("sm_hierarchical_top_n", 20)),
+            output_dir=Path(d.get("output_dir", "output_sm")),
+            vina_executable=vina_exec,
+            remove_waters=d.get("sm_remove_waters", True),
+        )
+
     def _run(self):
         # Set up logging to queue
         root_logger = logging.getLogger("autodock_pipeline")
@@ -311,50 +375,13 @@ class PipelineRunner:
         root_logger.setLevel(logging.DEBUG)
 
         try:
-            config = self._build_config()
-            pipeline = DockingPipeline(config)
-            pipeline.checkpoint_handler = self.checkpoint_handler
+            pipeline_type = self.config_data.get("pipeline_type", "peptide")
 
-            # Start a timer thread that emits progress events
-            import time as _time
-            self._pipeline = pipeline
+            if pipeline_type == "small_molecule":
+                self._run_sm_pipeline()
+            else:
+                self._run_peptide_pipeline()
 
-            def _emit_progress():
-                while self.is_running and not self.is_complete:
-                    if pipeline.estimated_end_time > 0:
-                        remaining = max(0, pipeline.estimated_end_time - _time.time())
-                        self.event_queue.put({
-                            "type": "progress",
-                            "estimated_remaining_sec": round(remaining, 1),
-                            "completed_docks": pipeline.completed_docks,
-                            "total_docks": pipeline.estimated_total_docks,
-                            "time_per_dock": round(pipeline.time_per_dock, 1),
-                        })
-                    _time.sleep(3)  # emit every 3 seconds
-
-            progress_thread = threading.Thread(target=_emit_progress, daemon=True)
-            progress_thread.start()
-
-            pipeline.run()
-
-            # Collect results
-            records = results_to_records(pipeline.all_results)
-            self.results = []
-            for i, rec in enumerate(
-                sorted(records, key=lambda r: r.docking_score)
-            ):
-                d = {"rank": i + 1, "ligand_name": rec.uid,
-                     "docking_score": rec.docking_score,
-                     "origin": rec.origin, "smiles": rec.smiles,
-                     "stereo": rec.stereo,
-                     "score": rec.docking_score}
-                self.results.append(d)
-
-            self.event_queue.put({
-                "type": "complete",
-                "results": self.results,
-                "output_dir": str(config.output_dir),
-            })
         except Exception as e:
             tb = traceback.format_exc()
             logger.error("Pipeline failed: %s", e)
@@ -367,3 +394,99 @@ class PipelineRunner:
             self.is_running = False
             self.is_complete = True
             root_logger.removeHandler(handler)
+
+    def _run_peptide_pipeline(self):
+        """Run the peptide optimization pipeline (existing behavior)."""
+        import time as _time
+
+        config = self._build_config()
+        pipeline = DockingPipeline(config)
+        pipeline.checkpoint_handler = self.checkpoint_handler
+
+        self._pipeline = pipeline
+
+        def _emit_progress():
+            while self.is_running and not self.is_complete:
+                if pipeline.estimated_end_time > 0:
+                    remaining = max(0, pipeline.estimated_end_time - _time.time())
+                    self.event_queue.put({
+                        "type": "progress",
+                        "estimated_remaining_sec": round(remaining, 1),
+                        "completed_docks": pipeline.completed_docks,
+                        "total_docks": pipeline.estimated_total_docks,
+                        "time_per_dock": round(pipeline.time_per_dock, 1),
+                    })
+                _time.sleep(3)
+
+        progress_thread = threading.Thread(target=_emit_progress, daemon=True)
+        progress_thread.start()
+
+        pipeline.run()
+
+        # Collect results
+        records = results_to_records(pipeline.all_results)
+        self.results = []
+        for i, rec in enumerate(
+            sorted(records, key=lambda r: r.docking_score)
+        ):
+            d = {"rank": i + 1, "ligand_name": rec.uid,
+                 "docking_score": rec.docking_score,
+                 "origin": rec.origin, "smiles": rec.smiles,
+                 "stereo": rec.stereo,
+                 "score": rec.docking_score}
+            self.results.append(d)
+
+        self.event_queue.put({
+            "type": "complete",
+            "results": self.results,
+            "output_dir": str(config.output_dir),
+        })
+
+    def _run_sm_pipeline(self):
+        """Run the small molecule optimization pipeline."""
+        import time as _time
+        from ..sm_pipeline import SmallMoleculePipeline
+
+        sm_config = self._build_sm_config()
+        pipeline = SmallMoleculePipeline(sm_config)
+        pipeline.checkpoint_handler = self.checkpoint_handler
+
+        self._pipeline = pipeline
+
+        def _emit_progress():
+            while self.is_running and not self.is_complete:
+                if pipeline.estimated_end_time > 0:
+                    remaining = max(0, pipeline.estimated_end_time - _time.time())
+                    self.event_queue.put({
+                        "type": "progress",
+                        "estimated_remaining_sec": round(remaining, 1),
+                        "completed_docks": pipeline.completed_docks,
+                        "total_docks": pipeline.estimated_total_docks,
+                        "time_per_dock": round(pipeline.time_per_dock, 1),
+                    })
+                _time.sleep(3)
+
+        progress_thread = threading.Thread(target=_emit_progress, daemon=True)
+        progress_thread.start()
+
+        pipeline.run()
+
+        # Collect results
+        records = results_to_records(pipeline.all_results)
+        self.results = []
+        for i, rec in enumerate(
+            sorted(records, key=lambda r: r.docking_score)
+        ):
+            d = {"rank": i + 1, "ligand_name": rec.uid,
+                 "docking_score": rec.docking_score,
+                 "origin": rec.origin, "smiles": rec.smiles,
+                 "stereo": getattr(rec, "stereo", ""),
+                 "score": rec.docking_score}
+            self.results.append(d)
+
+        self.event_queue.put({
+            "type": "complete",
+            "results": self.results,
+            "output_dir": str(sm_config.output_dir),
+            "pipeline_type": "small_molecule",
+        })
