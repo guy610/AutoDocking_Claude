@@ -342,6 +342,18 @@ def qc_status():
     return jsonify(available)
 
 
+@app.route("/api/download_sm_report")
+def download_sm_report():
+    """Serve the small molecule markdown report."""
+    if runner and runner.config_data:
+        output_dir = Path(runner.config_data.get("output_dir", "output_sm"))
+        md_path = output_dir / "report.md"
+        if md_path.exists():
+            return send_from_directory(str(md_path.parent), md_path.name,
+                                       as_attachment=True)
+    return jsonify({"error": "No SM report available"}), 404
+
+
 def open_browser():
     webbrowser.open("http://127.0.0.1:5000")
 

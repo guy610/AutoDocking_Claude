@@ -1,4 +1,4 @@
-/* Stephen Docking - Web UI JavaScript v0.8.2 */
+/* Stephen Docking - Web UI JavaScript v0.9.0 */
 
 (function () {
     "use strict";
@@ -27,6 +27,7 @@
     var sortAsc = true;
     var uaaCounter = 0;
     var lastRunConfig = null;  // Stores the config from the last run for rerun
+    var currentPipelineType = "peptide";  // "peptide" or "small_molecule"
 
     // ==================== Amino Acid Data ====================
     var AA_DATA = [
@@ -60,6 +61,10 @@
     document.addEventListener("DOMContentLoaded", function () {
         detectVina();
         setupDropZone();
+        setupSmDropZone();
+        setupPipelineToggle();
+        setupSmRadioToggles();
+        setupSmPropertyToggle();
         setupRadioToggles();
         setupAdvancedToggle();
         setupStartButton();
@@ -212,6 +217,240 @@
     if ($("#detect-rxdock-btn")) $("#detect-rxdock-btn").addEventListener("click", detectRxDock);
     if ($("#detect-p2rank-btn")) $("#detect-p2rank-btn").addEventListener("click", detectP2Rank);
     if ($("#detect-fpocket-btn")) $("#detect-fpocket-btn").addEventListener("click", detectFpocket);
+
+    // SM auto-detect buttons
+    if ($("#sm-detect-vina-btn")) {
+        $("#sm-detect-vina-btn").addEventListener("click", function() {
+            fetch("/api/detect_vina").then(function(r) { return r.json(); })
+                .then(function(data) { if (data.found && $("#sm-vina-path")) $("#sm-vina-path").value = data.found; })
+                .catch(function() {});
+        });
+    }
+    if ($("#sm-detect-gnina-btn")) {
+        $("#sm-detect-gnina-btn").addEventListener("click", function() {
+            fetch("/api/detect_gnina").then(function(r) { return r.json(); })
+                .then(function(data) { if (data.found && $("#sm-gnina-path")) $("#sm-gnina-path").value = data.found; })
+                .catch(function() {});
+        });
+    }
+    if ($("#sm-detect-rxdock-btn")) {
+        $("#sm-detect-rxdock-btn").addEventListener("click", function() {
+            fetch("/api/detect_rxdock").then(function(r) { return r.json(); })
+                .then(function(data) { if (data.found && $("#sm-rxdock-path")) $("#sm-rxdock-path").value = data.found; })
+                .catch(function() {});
+        });
+    }
+
+    // ==================== Pipeline Type Toggle ====================
+    function setupPipelineToggle() {
+        var peptideBtn = $("#mode-peptide");
+        var smBtn = $("#mode-smallmol");
+        var peptideForm = $("#peptide-form");
+        var smForm = $("#smallmol-form");
+
+        if (!peptideBtn || !smBtn) return;
+
+        peptideBtn.addEventListener("click", function() {
+            currentPipelineType = "peptide";
+            peptideBtn.classList.remove("btn-secondary");
+            peptideBtn.classList.add("btn-primary", "active");
+            smBtn.classList.remove("btn-primary", "active");
+            smBtn.classList.add("btn-secondary");
+            if (peptideForm) peptideForm.style.display = "block";
+            if (smForm) smForm.style.display = "none";
+        });
+
+        smBtn.addEventListener("click", function() {
+            currentPipelineType = "small_molecule";
+            smBtn.classList.remove("btn-secondary");
+            smBtn.classList.add("btn-primary", "active");
+            peptideBtn.classList.remove("btn-primary", "active");
+            peptideBtn.classList.add("btn-secondary");
+            if (peptideForm) peptideForm.style.display = "none";
+            if (smForm) smForm.style.display = "block";
+        });
+    }
+
+    // ==================== SM Drop Zone ====================
+    function setupSmDropZone() {
+        var smDrop = $("#sm-drop-zone");
+        var smFile = $("#sm-receptor-file");
+        if (!smDrop || !smFile) return;
+
+        smDrop.addEventListener("click", function() { smFile.click(); });
+
+        smDrop.addEventListener("dragover", function(e) {
+            e.preventDefault();
+            smDrop.classList.add("drag-over");
+        });
+
+        smDrop.addEventListener("dragleave", function() {
+            smDrop.classList.remove("drag-over");
+        });
+
+        smDrop.addEventListener("drop", function(e) {
+            e.preventDefault();
+            smDrop.classList.remove("drag-over");
+            if (e.dataTransfer.files.length > 0) {
+                handleSmFile(e.dataTransfer.files[0]);
+            }
+        });
+
+        smFile.addEventListener("change", function() {
+            if (smFile.files.length > 0) {
+                handleSmFile(smFile.files[0]);
+            }
+        });
+    }
+
+    function handleSmFile(file) {
+        var formData = new FormData();
+        formData.append("receptor", file);
+        var smDrop = $("#sm-drop-zone");
+        smDrop.innerHTML = "<p>Uploading...</p>";
+
+        fetch("/api/upload", { method: "POST", body: formData })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (data.error) {
+                    smDrop.innerHTML = '<p style="color:#ef4444">Upload failed: ' + data.error + "</p>";
+                    return;
+                }
+                $("#sm-receptor-path").value = data.path;
+                $("#sm-upload-filename").textContent = data.filename;
+                $("#sm-upload-status").style.display = "block";
+                smDrop.innerHTML = "<p>&#10003; " + data.filename + "</p><p class='small'>Click to change</p>";
+            })
+            .catch(function(err) {
+                smDrop.innerHTML = '<p style="color:#ef4444">Upload error: ' + err + "</p>";
+            });
+    }
+
+    // ==================== SM Radio Toggles ====================
+    function setupSmRadioToggles() {
+        $$('input[name="sm_run_mode"]').forEach(function(r) {
+            r.addEventListener("change", function() {
+                var smHier = $("#sm-hierarchical-options");
+                if (smHier) {
+                    smHier.style.display = r.value === "hierarchical" ? "block" : "none";
+                    if (r.value === "hierarchical") {
+                        if ($("#sm-gnina-path") && !$("#sm-gnina-path").value) detectGnina();
+                        if ($("#sm-rxdock-path") && !$("#sm-rxdock-path").value) detectRxDock();
+                    }
+                }
+            });
+        });
+    }
+
+    // ==================== SM Property Target Toggle ====================
+    var smPropertyPresets = {
+        cosmetic: { logp_min: 1.0, logp_max: 3.0, mw_max: 350, psa_max: 70, hbd_max: 2, hba_max: 5 },
+        drug_like: { logp_min: 1.0, logp_max: 5.0, mw_max: 500, psa_max: 140, hbd_max: 5, hba_max: 10 }
+    };
+
+    function setupSmPropertyToggle() {
+        var cosmeticBtn = $("#sm-target-cosmetic");
+        var druglikeBtn = $("#sm-target-druglike");
+        var customBtn = $("#sm-target-custom");
+        var hiddenField = $("#sm-property-target");
+        var hintDiv = $("#sm-target-hint");
+        var customDiv = $("#sm-custom-properties");
+
+        if (!cosmeticBtn || !druglikeBtn || !customBtn) return;
+
+        function activate(btn, value) {
+            [cosmeticBtn, druglikeBtn, customBtn].forEach(function(b) {
+                b.classList.remove("btn-primary", "active");
+                b.classList.add("btn-secondary");
+            });
+            btn.classList.remove("btn-secondary");
+            btn.classList.add("btn-primary", "active");
+            if (hiddenField) hiddenField.value = value;
+
+            if (value === "custom") {
+                if (customDiv) customDiv.style.display = "block";
+                if (hintDiv) hintDiv.textContent = "Custom: set your own property limits below.";
+            } else {
+                if (customDiv) customDiv.style.display = "none";
+                var p = smPropertyPresets[value] || smPropertyPresets.cosmetic;
+                if (hintDiv) {
+                    hintDiv.textContent = (value === "cosmetic" ? "Cosmetic" : "Drug-like") +
+                        ": logP " + p.logp_min + "\u2013" + p.logp_max +
+                        ", MW <" + p.mw_max +
+                        ", PSA <" + p.psa_max +
+                        ", HBD \u2264" + p.hbd_max +
+                        ", HBA \u2264" + p.hba_max;
+                }
+                // Sync custom fields to preset values
+                if ($("#sm-logp-min")) $("#sm-logp-min").value = p.logp_min;
+                if ($("#sm-logp-max")) $("#sm-logp-max").value = p.logp_max;
+                if ($("#sm-mw-max")) $("#sm-mw-max").value = p.mw_max;
+                if ($("#sm-psa-max")) $("#sm-psa-max").value = p.psa_max;
+                if ($("#sm-hbd-max")) $("#sm-hbd-max").value = p.hbd_max;
+                if ($("#sm-hba-max")) $("#sm-hba-max").value = p.hba_max;
+            }
+        }
+
+        cosmeticBtn.addEventListener("click", function() { activate(cosmeticBtn, "cosmetic"); });
+        druglikeBtn.addEventListener("click", function() { activate(druglikeBtn, "drug_like"); });
+        customBtn.addEventListener("click", function() { activate(customBtn, "custom"); });
+    }
+
+    // ==================== SM Form Data Collection ====================
+    function collectSmFormData() {
+        var smRunMode = "full";
+        var smRunRadio = document.querySelector('input[name="sm_run_mode"]:checked');
+        if (smRunRadio) smRunMode = smRunRadio.value;
+
+        var propTarget = "cosmetic";
+        if ($("#sm-property-target")) propTarget = $("#sm-property-target").value;
+
+        return {
+            pipeline_type: "small_molecule",
+            receptor_path: $("#sm-receptor-path").value,
+            sm_ligand_resname: ($("#sm-ligand-resname").value || "").trim().toUpperCase(),
+            sm_ligand_chain: ($("#sm-ligand-chain").value || "").trim(),
+            sm_max_analogs: $("#sm-max-analogs").value,
+            sm_autobox_padding: $("#sm-autobox-padding").value,
+            sm_max_rounds: ($("#sm-max-rounds") ? $("#sm-max-rounds").value : 3),
+            sm_delta_threshold: ($("#sm-delta-threshold") ? $("#sm-delta-threshold").value : 0.3),
+            sm_enable_bioisosteres: $("#sm-bioisosteres").checked,
+            sm_enable_extensions: $("#sm-extensions").checked,
+            sm_enable_removals: $("#sm-removals").checked,
+            sm_enable_prodrug_esters: ($("#sm-prodrug-esters") ? $("#sm-prodrug-esters").checked : true),
+            sm_enable_cyclization_detection: ($("#sm-cyclization-detection") ? $("#sm-cyclization-detection").checked : true),
+            sm_property_target: propTarget,
+            sm_target_logp_min: ($("#sm-logp-min") ? parseFloat($("#sm-logp-min").value) : 1.0),
+            sm_target_logp_max: ($("#sm-logp-max") ? parseFloat($("#sm-logp-max").value) : 3.0),
+            sm_target_mw_max: ($("#sm-mw-max") ? parseFloat($("#sm-mw-max").value) : 350),
+            sm_target_psa_max: ($("#sm-psa-max") ? parseFloat($("#sm-psa-max").value) : 70),
+            sm_target_hbd_max: ($("#sm-hbd-max") ? parseInt($("#sm-hbd-max").value) : 2),
+            sm_target_hba_max: ($("#sm-hba-max") ? parseInt($("#sm-hba-max").value) : 5),
+            sm_target_rotatable_max: ($("#sm-rotatable-max") ? parseInt($("#sm-rotatable-max").value) : -1),
+            // v0.9.2 SAR enhancements
+            sm_enable_stereoisomer_enum: ($("#sm-stereoisomer-enum") ? $("#sm-stereoisomer-enum").checked : true),
+            sm_enable_thioether_detection: ($("#sm-thioether-detection") ? $("#sm-thioether-detection").checked : true),
+            sm_enable_metabolic_blocking: ($("#sm-metabolic-blocking") ? $("#sm-metabolic-blocking").checked : true),
+            sm_enable_scaffold_hopping: ($("#sm-scaffold-hopping") ? $("#sm-scaffold-hopping").checked : false),
+            sm_enable_mmp_tracking: ($("#sm-mmp-tracking") ? $("#sm-mmp-tracking").checked : true),
+            sm_enable_torsion_filter: ($("#sm-torsion-filter") ? $("#sm-torsion-filter").checked : true),
+            sm_run_mode: smRunMode,
+            sm_exhaustiveness: $("#sm-exhaustiveness").value,
+            sm_num_modes: $("#sm-num-modes").value,
+            sm_vina_executable: ($("#sm-vina-path").value || "").trim(),
+            sm_gnina_executable: ($("#sm-gnina-path") ? $("#sm-gnina-path").value : ""),
+            sm_rxdock_executable: ($("#sm-rxdock-path") ? $("#sm-rxdock-path").value : ""),
+            output_dir: ($("#sm-output-dir").value || "./output_sm"),
+        };
+    }
+
+    function validateSm() {
+        if (!$("#sm-receptor-path").value) {
+            alert("Please upload a co-crystal PDB file (Step 1).");
+            return false;
+        }
+        return true;
+    }
 
     // ==================== File Upload / Drop Zone ====================
     function setupDropZone() {
@@ -429,9 +668,48 @@
                 addUAARow();
             });
         }
+        // Bulk paste toggle
+        var bulkToggle = $("#uaa-bulk-toggle");
+        if (bulkToggle) {
+            bulkToggle.addEventListener("click", function() {
+                var area = $("#uaa-bulk-area");
+                area.style.display = area.style.display === "none" ? "block" : "none";
+            });
+        }
+        // Bulk import button
+        var bulkImport = $("#uaa-bulk-import");
+        if (bulkImport) {
+            bulkImport.addEventListener("click", function() {
+                var text = ($("#uaa-bulk-text").value || "").trim();
+                if (!text) return;
+                var lines = text.split("\n");
+                var imported = 0;
+                lines.forEach(function(line) {
+                    line = line.trim();
+                    if (!line || line.startsWith("#")) return;
+                    // Split on tab, multiple spaces, or comma
+                    var parts = line.split(/[\t,]+|\s{2,}/);
+                    if (parts.length < 2) {
+                        // Try single space split as last resort
+                        parts = line.split(/\s+/);
+                    }
+                    if (parts.length >= 2) {
+                        var name = parts[0].trim();
+                        var smiles = parts.slice(1).join("").trim();
+                        addUAARow(name, smiles);
+                        imported++;
+                    }
+                });
+                if (imported > 0) {
+                    $("#uaa-bulk-text").value = "";
+                    $("#uaa-bulk-area").style.display = "none";
+                    appendLog("INFO", "Imported " + imported + " custom amino acid(s)");
+                }
+            });
+        }
     }
 
-    function addUAARow() {
+    function addUAARow(prefillName, prefillSmiles) {
         uaaCounter++;
         var list = $("#uaa-list");
         if (!list) return;
@@ -446,6 +724,8 @@
             '<button type="button" class="uaa-remove" data-row="' + uaaCounter +
             '">&#10005;</button>';
         list.appendChild(row);
+        if (prefillName) row.querySelector(".uaa-name-input").value = prefillName;
+        if (prefillSmiles) row.querySelector(".uaa-smiles-input").value = prefillSmiles;
 
         row.querySelector(".uaa-remove").addEventListener("click", function() {
             row.remove();
@@ -564,9 +844,16 @@
     // ==================== Start Pipeline ====================
     function setupStartButton() {
         startBtn.addEventListener("click", function () {
-            if (!validate()) return;
+            var data;
+            if (currentPipelineType === "small_molecule") {
+                if (!validateSm()) return;
+                data = collectSmFormData();
+            } else {
+                if (!validate()) return;
+                data = collectFormData();
+                data.pipeline_type = "peptide";
+            }
 
-            var data = collectFormData();
             lastRunConfig = data;  // Save for rerun
             startBtn.disabled = true;
             startBtn.textContent = "Starting...";

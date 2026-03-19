@@ -117,3 +117,83 @@ class PipelineConfig:
     stages: List[str] = field(default_factory=lambda: [
         "sidechain", "backbone", "minimize"
     ])
+
+
+@dataclass
+class SmallMoleculeConfig:
+    """Configuration for the small molecule optimization pipeline."""
+    # Input: crystal structure containing receptor + co-crystallized ligand
+    crystal_pdb: Path = Path("crystal.pdb")
+    ligand_resname: str = ""          # 3-letter residue name (auto-detect if empty)
+    ligand_chain: str = ""            # chain ID (auto-detect if empty)
+    ligand_smiles_override: str = ""  # manual SMILES (bypasses PDB extraction, which can miss aromaticity)
+
+    # Docking box
+    autobox_padding: float = 4.0      # Angstroms padding around ligand
+
+    # Binding analysis parameters
+    hbond_cutoff: float = 3.5
+    hydrophobic_cutoff: float = 4.5
+    clash_vdw_scale: float = 0.75
+    charge_repulsion_cutoff: float = 4.0
+
+    # Analog generation
+    max_analogs: int = 50
+    enable_bioisosteres: bool = True
+    enable_extensions: bool = True
+    enable_removals: bool = True
+
+    # Docking
+    docking: DockingParams = field(default_factory=DockingParams)
+
+    # Hierarchical screening (optional)
+    run_mode: str = "full"            # "analysis_only", "full", "hierarchical"
+    gnina_executable: str = ""
+    rxdock_executable: str = ""
+    hierarchical_top_n: int = 20
+
+    # Multi-round optimization
+    max_rounds: int = 3
+    delta_threshold: float = 0.3      # kcal/mol improvement to advance
+    max_combos_per_round: int = 100   # cap combinatorial explosion
+
+    # Property target window
+    property_target: str = "cosmetic"  # "cosmetic", "drug_like", "custom"
+    target_logp_min: float = 1.0
+    target_logp_max: float = 3.0
+    target_mw_max: float = 350.0
+    target_psa_max: float = 70.0
+    target_hbd_max: int = 2
+    target_hba_max: int = 5
+
+    # Pro-drug esters
+    enable_prodrug_esters: bool = True
+
+    # Cyclization detection
+    enable_cyclization_detection: bool = True
+
+    # v0.9.2 SAR enhancements
+    enable_stereoisomer_enum: bool = True
+    stereo_max_centers: int = 4           # cap at 2^4=16 isomers
+    stereo_final_top_n: int = 5           # top N binders for full enumeration in final round
+
+    enable_thioether_detection: bool = True
+
+    enable_metabolic_blocking: bool = True
+
+    enable_scaffold_hopping: bool = False  # off by default — expensive
+    max_scaffold_hops: int = 10
+
+    enable_mmp_tracking: bool = True
+
+    enable_torsion_filter: bool = True
+    torsion_amide_tolerance: float = 30.0  # degrees from 0/180
+
+    target_rotatable_max: int = -1         # -1 = use preset default
+
+    # Paths
+    output_dir: Path = Path("output_sm")
+    vina_executable: str = "vina"
+
+    # Receptor preparation
+    remove_waters: bool = True

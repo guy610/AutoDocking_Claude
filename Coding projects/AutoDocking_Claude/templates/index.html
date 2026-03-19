@@ -15,8 +15,17 @@
 <div class="container">
     <header>
         <h1>Stephen Docking</h1>
-        <p class="subtitle">Peptide Optimization Pipeline v0.8.2</p>
+        <p class="subtitle">Molecular Optimization Pipeline v0.9.0</p>
     </header>
+
+    <!-- ==================== PIPELINE TYPE TOGGLE ==================== -->
+    <div class="card" id="pipeline-toggle-card" style="margin-bottom: 1.5rem; padding: 1rem 1.5rem;">
+        <div style="display:flex; align-items:center; gap:0.5rem;">
+            <span style="font-weight:600; margin-right:0.5rem;">Pipeline:</span>
+            <button type="button" id="mode-peptide" class="btn btn-primary pipeline-toggle active">Peptide Optimization</button>
+            <button type="button" id="mode-smallmol" class="btn btn-secondary pipeline-toggle">Small Molecule Optimization</button>
+        </div>
+    </div>
 
     <!-- ==================== RESUME BANNER ==================== -->
     <div id="resume-banner" class="card" style="display:none; background: #1a2940; border: 1px solid #3b82f6; margin-bottom: 1.5rem;">
@@ -34,6 +43,9 @@
 
     <!-- ==================== FORM VIEW ==================== -->
     <div id="form-view">
+
+    <!-- ==================== PEPTIDE FORM ==================== -->
+    <div id="peptide-form">
 
         <!-- Step 1: Receptor -->
         <div class="card step">
@@ -182,11 +194,11 @@
                 </label>
                 <label class="radio-label">
                     <input type="radio" name="run_mode" value="full" checked>
-                    Full Pipeline (all 3 stages)
+                    Full Pipeline &mdash; Vina only (3 stages)
                 </label>
                 <label class="radio-label">
                     <input type="radio" name="run_mode" value="hierarchical">
-                    Hierarchical (Vina + GNINA + RxDock)
+                    Full Pipeline + Cross-Validation (Vina &rarr; GNINA &rarr; RxDock)
                 </label>
             </div>
             <div id="hierarchical-options" style="display:none; margin-top: 1rem; padding: 1rem; background: var(--card-bg, #f8f9fa); border-radius: 8px; border: 1px solid var(--border, #e0e0e0);">
@@ -235,6 +247,16 @@
                     <!-- UAA rows added by JavaScript -->
                 </div>
                 <button type="button" id="add-uaa-btn" class="btn btn-secondary btn-small">+ Add Custom AA</button>
+
+                <div style="margin-top: 1rem;">
+                    <button type="button" id="uaa-bulk-toggle" class="btn btn-secondary btn-small">&#x1F4CB; Paste List</button>
+                    <div id="uaa-bulk-area" style="display:none; margin-top: 0.5rem;">
+                        <p class="aa-help">Paste one entry per line: <code>NAME  SMILES</code> (tab or space separated)</p>
+                        <p class="aa-help">Example:<br><code>NLE  [*]CCCC</code><br><code>AIB  [*](C)C</code></p>
+                        <textarea id="uaa-bulk-text" rows="6" style="width:100%; font-family:monospace; font-size:0.85rem; padding:0.5rem; border:1px solid var(--border,#ccc); border-radius:6px; resize:vertical;" placeholder="NLE  [*]CCCC&#10;AIB  [*](C)C&#10;DPA  [*]c1ccc(F)cc1"></textarea>
+                        <button type="button" id="uaa-bulk-import" class="btn btn-primary btn-small" style="margin-top:0.5rem;">Import</button>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -335,6 +357,262 @@
             <h2>Additional SMILES <span class="optional">(optional)</span></h2>
             <textarea id="user-smiles" rows="4" placeholder="One SMILES string per line" class="text-input textarea"></textarea>
         </div>
+
+    </div><!-- /peptide-form -->
+
+    <!-- ==================== SMALL MOLECULE FORM ==================== -->
+    <div id="smallmol-form" style="display:none">
+
+        <!-- SM Step 1: Crystal Structure -->
+        <div class="card step">
+            <div class="step-badge">1</div>
+            <h2>Crystal Structure (Receptor + Ligand)</h2>
+            <p class="small" style="margin-bottom:0.75rem; color:#888;">
+                Upload a PDB file containing the receptor protein co-crystallized with the small-molecule ligand.
+                The ligand will be automatically extracted from the HETATM records.
+            </p>
+            <div id="sm-drop-zone" class="drop-zone">
+                <p>Drag &amp; drop your co-crystal PDB file here</p>
+                <p class="small">or click to browse</p>
+                <input type="file" id="sm-receptor-file" accept=".pdb,.pdbqt,.cif" hidden>
+            </div>
+            <div id="sm-upload-status" class="upload-status" style="display:none">
+                <span class="check-icon">&#10003;</span>
+                <span id="sm-upload-filename"></span>
+            </div>
+            <input type="hidden" id="sm-receptor-path" value="">
+        </div>
+
+        <!-- SM Step 2: Ligand Identification -->
+        <div class="card step">
+            <div class="step-badge">2</div>
+            <h2>Ligand Identification</h2>
+            <p class="small" style="margin-bottom:0.75rem; color:#888;">
+                Specify the co-crystallized ligand, or leave blank to auto-detect the largest non-buffer HETATM group.
+            </p>
+            <div class="settings-grid">
+                <div>
+                    <label for="sm-ligand-resname">Residue Name (3-letter)</label>
+                    <input type="text" id="sm-ligand-resname" placeholder="e.g. LIG, 4WI, BTN (blank = auto-detect)" class="text-input" maxlength="3" style="text-transform:uppercase;">
+                </div>
+                <div>
+                    <label for="sm-ligand-chain">Chain ID</label>
+                    <input type="text" id="sm-ligand-chain" placeholder="e.g. A (blank = auto)" class="text-input" maxlength="1">
+                </div>
+            </div>
+        </div>
+
+        <!-- SM Step 3: Analysis & Generation Options -->
+        <div class="card step">
+            <div class="step-badge">3</div>
+            <h2>Analysis &amp; Analog Generation</h2>
+            <div class="settings-grid">
+                <div>
+                    <label for="sm-max-analogs">Max Analogs per Round</label>
+                    <input type="number" id="sm-max-analogs" value="50" min="5" max="200" step="5" class="num-input">
+                </div>
+                <div>
+                    <label for="sm-autobox-padding">Box Padding (&Aring;)</label>
+                    <input type="number" id="sm-autobox-padding" value="4.0" min="2" max="10" step="0.5" class="num-input">
+                </div>
+                <div>
+                    <label for="sm-max-rounds">Max Optimization Rounds</label>
+                    <input type="number" id="sm-max-rounds" value="3" min="1" max="10" step="1" class="num-input">
+                </div>
+                <div>
+                    <label for="sm-delta-threshold">Improvement Threshold (kcal/mol)</label>
+                    <input type="number" id="sm-delta-threshold" value="0.3" min="0.1" max="2.0" step="0.1" class="num-input">
+                </div>
+            </div>
+            <div style="margin-top: 1rem;">
+                <label class="checkbox-label">
+                    <input type="checkbox" id="sm-bioisosteres" checked>
+                    <strong>Bioisostere Replacements</strong> &mdash; COOH&rarr;tetrazole, NH&rarr;NCH3, OH&rarr;F, phenyl&rarr;pyridyl, etc.
+                </label>
+            </div>
+            <div style="margin-top: 0.5rem;">
+                <label class="checkbox-label">
+                    <input type="checkbox" id="sm-extensions" checked>
+                    <strong>Group Extensions</strong> &mdash; add methyl, hydroxyl, amino, fluorine at exit vectors
+                </label>
+            </div>
+            <div style="margin-top: 0.5rem;">
+                <label class="checkbox-label">
+                    <input type="checkbox" id="sm-removals" checked>
+                    <strong>Group Removal</strong> &mdash; trim non-contributing substituents (replace with H)
+                </label>
+            </div>
+            <div style="margin-top: 0.5rem;">
+                <label class="checkbox-label">
+                    <input type="checkbox" id="sm-prodrug-esters" checked>
+                    <strong>Pro-drug Esters</strong> &mdash; ethyl, isopropyl, POM, acetoxymethyl esters for carboxylates
+                </label>
+            </div>
+            <div style="margin-top: 0.5rem;">
+                <label class="checkbox-label">
+                    <input type="checkbox" id="sm-cyclization-detection" checked>
+                    <strong>Cyclization Detection</strong> &mdash; detect amine + carboxylate pairs for potential lactam formation
+                </label>
+            </div>
+        </div>
+
+        <!-- SM Step 3.3: SAR Strategy (v0.9.2) -->
+        <div class="card step">
+            <div class="step-badge">3.3</div>
+            <h2>SAR Strategy</h2>
+            <p class="small" style="margin-bottom:0.75rem; color:#888;">
+                Enable or disable advanced SAR enhancement strategies. Some features add computational cost.
+            </p>
+            <div style="margin-top: 0.5rem;">
+                <label class="checkbox-label">
+                    <input type="checkbox" id="sm-stereoisomer-enum" checked>
+                    <strong>Stereoisomer Enumeration</strong> &mdash; rational inversion in intermediate rounds, full enumeration of top binders in final round
+                </label>
+            </div>
+            <div style="margin-top: 0.5rem;">
+                <label class="checkbox-label">
+                    <input type="checkbox" id="sm-thioether-detection" checked>
+                    <strong>Thioether Cyclization</strong> &mdash; detect thiol + alkyl halide/methyl pairs for thioether bridge formation
+                </label>
+            </div>
+            <div style="margin-top: 0.5rem;">
+                <label class="checkbox-label">
+                    <input type="checkbox" id="sm-metabolic-blocking" checked>
+                    <strong>Metabolic Soft Spot Blocking</strong> &mdash; CYP450 oxidation site detection and fluorination/blocking
+                </label>
+            </div>
+            <div style="margin-top: 0.5rem;">
+                <label class="checkbox-label">
+                    <input type="checkbox" id="sm-scaffold-hopping">
+                    <strong>Scaffold Hopping</strong> &mdash; ring transformations (phenyl&#8596;pyridyl, saturation, heteroatom insertion)
+                    <span style="color:#c00; font-size:0.8em; margin-left:0.5rem;">(computationally expensive)</span>
+                </label>
+            </div>
+            <div style="margin-top: 0.5rem;">
+                <label class="checkbox-label">
+                    <input type="checkbox" id="sm-mmp-tracking" checked>
+                    <strong>Matched Molecular Pair Tracking</strong> &mdash; apply passing modifications at all equivalent sites
+                </label>
+            </div>
+            <div style="margin-top: 0.5rem;">
+                <label class="checkbox-label">
+                    <input type="checkbox" id="sm-torsion-filter" checked>
+                    <strong>Torsion Strain Pre-filter</strong> &mdash; reject molecules with strained amide/ester torsion angles before docking
+                </label>
+            </div>
+        </div>
+
+        <!-- SM Step 3.5: Property & Permeability Target -->
+        <div class="card step">
+            <div class="step-badge">3.5</div>
+            <h2>Property &amp; Permeability Target</h2>
+            <p class="small" style="margin-bottom:0.75rem; color:#888;">
+                Select a property target window to bias analog generation. Modifications that push properties outside the window are suppressed.
+                Potts-Guy skin permeability is computed for all candidates: log Kp = -2.7 + 0.71&times;logP - 0.0061&times;MW.
+            </p>
+            <div style="display:flex; gap:0.5rem; margin-bottom:1rem;">
+                <button type="button" id="sm-target-cosmetic" class="btn btn-primary sm-target-toggle active">Cosmetic</button>
+                <button type="button" id="sm-target-druglike" class="btn btn-secondary sm-target-toggle">Drug-like</button>
+                <button type="button" id="sm-target-custom" class="btn btn-secondary sm-target-toggle">Custom</button>
+            </div>
+            <input type="hidden" id="sm-property-target" value="cosmetic">
+            <div id="sm-target-hint" style="margin-bottom:0.75rem; font-size:0.85rem; color:#666;">
+                Cosmetic: logP 1&ndash;3, MW &lt;350, PSA &lt;70, HBD &le;2, HBA &le;5
+            </div>
+            <div id="sm-custom-properties" style="display:none;">
+                <div class="settings-grid">
+                    <div>
+                        <label for="sm-logp-min">logP Min</label>
+                        <input type="number" id="sm-logp-min" value="1.0" step="0.5" class="num-input">
+                    </div>
+                    <div>
+                        <label for="sm-logp-max">logP Max</label>
+                        <input type="number" id="sm-logp-max" value="3.0" step="0.5" class="num-input">
+                    </div>
+                    <div>
+                        <label for="sm-mw-max">MW Max</label>
+                        <input type="number" id="sm-mw-max" value="350" step="10" class="num-input">
+                    </div>
+                    <div>
+                        <label for="sm-psa-max">PSA Max</label>
+                        <input type="number" id="sm-psa-max" value="70" step="5" class="num-input">
+                    </div>
+                    <div>
+                        <label for="sm-hbd-max">HBD Max</label>
+                        <input type="number" id="sm-hbd-max" value="2" min="0" max="10" step="1" class="num-input">
+                    </div>
+                    <div>
+                        <label for="sm-hba-max">HBA Max</label>
+                        <input type="number" id="sm-hba-max" value="5" min="0" max="15" step="1" class="num-input">
+                    </div>
+                    <div>
+                        <label for="sm-rotatable-max">Rotatable Bonds Max</label>
+                        <input type="number" id="sm-rotatable-max" value="-1" min="-1" max="20" step="1" class="num-input" title="-1 = use preset default">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- SM Step 4: Run Mode & Docking Settings -->
+        <div class="card step">
+            <div class="step-badge">4</div>
+            <h2>Run Mode &amp; Docking</h2>
+            <div class="radio-group">
+                <label class="radio-label">
+                    <input type="radio" name="sm_run_mode" value="analysis_only">
+                    Analysis Only &mdash; no docking, just binding interface report
+                </label>
+                <label class="radio-label">
+                    <input type="radio" name="sm_run_mode" value="full" checked>
+                    Full Pipeline &mdash; Vina docking of all analogs
+                </label>
+                <label class="radio-label">
+                    <input type="radio" name="sm_run_mode" value="hierarchical">
+                    Full + Cross-Validation (Vina &rarr; GNINA &rarr; RxDock)
+                </label>
+            </div>
+            <div class="settings-grid" style="margin-top: 1rem;">
+                <div>
+                    <label for="sm-exhaustiveness">Exhaustiveness</label>
+                    <input type="number" id="sm-exhaustiveness" value="16" min="1" class="num-input">
+                </div>
+                <div>
+                    <label for="sm-num-modes">Num Modes</label>
+                    <input type="number" id="sm-num-modes" value="9" min="1" class="num-input">
+                </div>
+            </div>
+            <div id="sm-hierarchical-options" style="display:none; margin-top: 1rem; padding: 1rem; background: var(--card-bg, #f8f9fa); border-radius: 8px; border: 1px solid var(--border, #e0e0e0);">
+                <div class="inline-group" style="margin-bottom: 0.5rem;">
+                    <label style="min-width: 180px;">GNINA Executable</label>
+                    <input type="text" id="sm-gnina-path" placeholder="Path to gnina" class="text-input flex-grow">
+                    <button type="button" id="sm-detect-gnina-btn" class="btn btn-secondary">Auto-Detect</button>
+                </div>
+                <div class="inline-group" style="margin-bottom: 0.5rem;">
+                    <label style="min-width: 180px;">RxDock (rbdock)</label>
+                    <input type="text" id="sm-rxdock-path" placeholder="Path to rbdock" class="text-input flex-grow">
+                    <button type="button" id="sm-detect-rxdock-btn" class="btn btn-secondary">Auto-Detect</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- SM Step 5: Vina & Output -->
+        <div class="card step">
+            <div class="step-badge">5</div>
+            <h2>Vina &amp; Output</h2>
+            <div class="form-row">
+                <label for="sm-vina-path">Vina Executable</label>
+                <div class="inline-group">
+                    <input type="text" id="sm-vina-path" placeholder="Path to vina (or leave blank for auto-detect)" class="text-input flex-grow">
+                    <button type="button" id="sm-detect-vina-btn" class="btn btn-secondary">Auto-Detect</button>
+                </div>
+            </div>
+            <div class="form-row" style="margin-top: 0.75rem;">
+                <label for="sm-output-dir">Output Directory</label>
+                <input type="text" id="sm-output-dir" value="./output_sm" class="text-input">
+            </div>
+        </div>
+
+    </div><!-- /smallmol-form -->
 
         <!-- Start Button -->
         <div class="start-section">

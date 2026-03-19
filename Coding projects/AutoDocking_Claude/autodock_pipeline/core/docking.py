@@ -3,6 +3,7 @@ Docking engine: call AutoDock Vina and parse results.
 """
 
 import logging
+import os
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -12,6 +13,15 @@ from ..config import DockingParams
 from ..utils.io_utils import ensure_dir, read_pdbqt_energies, write_vina_config, extract_best_pose_pdb, safe_filename
 
 logger = logging.getLogger(__name__)
+
+
+def _wsl_path(win_path: str) -> str:
+    """Convert a Windows path to WSL format: C:\\Users\\... -> /mnt/c/Users/..."""
+    p = str(win_path).replace("\\", "/")
+    if len(p) >= 2 and p[1] == ":":
+        drive = p[0].lower()
+        p = "/mnt/{}/{}".format(drive, p[3:])
+    return p
 
 
 @dataclass
@@ -57,8 +67,16 @@ def run_vina(receptor_pdbqt: Path,
         energy_range=docking_params.energy_range,
     )
 
-    # Run Vina
-    cmd = [vina_executable, "--config", str(config_path)]
+    # Run Vina — handle WSL prefix
+    is_wsl = vina_executable.lower().startswith("wsl ")
+    if is_wsl:
+        # Rewrite the config file with WSL-formatted paths
+        wsl_config_path = output_dir / f"{fname}_vina_wsl.conf"
+        _rewrite_config_for_wsl(config_path, wsl_config_path)
+        wsl_exe = vina_executable[4:].strip()
+        cmd = ["wsl", wsl_exe, "--config", _wsl_path(str(wsl_config_path))]
+    else:
+        cmd = [vina_executable, "--config", str(config_path)]
     logger.info("Running Vina: %s", " ".join(cmd))
 
     try:
@@ -135,3 +153,27 @@ def _parse_energies_from_log(log_path: Path) -> List[float]:
             else:
                 break
     return energies
+
+
+def _rewrite_config_for_wsl(win_config: Path, wsl_config: Path) -> None:
+    """Rewrite a Vina config file with Windows paths converted to WSL paths.
+
+    Vina config lines like 'receptor = C:\\foo\\bar.pdbqt' become
+    'receptor = /mnt/c/foo/bar.pdbqt'.
+    """
+    path_keys = {"receptor", "ligand", "out"}
+    lines_out = []
+    for line in win_config.read_text().splitlines():
+        stripped = line.strip()
+        if "=" in stripped:
+            key, _, val = stripped.partition("=")
+            key = key.strip()
+            val = val.strip()
+            if key in path_keys and os.path.sep == "\\" and (
+                "\\" in val or (len(val) >= 2 and val[1] == ":")
+            ):
+                val = _wsl_path(val)
+                lines_out.append(f"{key} = {val}")
+                continue
+        lines_out.append(line)
+    wsl_config.write_text("\n".join(lines_out) + "\n")
